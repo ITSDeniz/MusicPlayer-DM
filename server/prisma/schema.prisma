@@ -1,0 +1,218 @@
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_URL")
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum Role {
+  USER
+  ARTIST
+  ADMIN
+}
+
+enum AudioFormat {
+  MP3
+  FLAC
+  WAV
+  AAC
+  OGG
+}
+
+// -----------------------------------------------------------------------------
+// Core User & Artist Models
+// -----------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  username     String   @unique
+  passwordHash String
+  avatarUrl    String?
+  role         Role     @default(USER)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  artistProfile Artist?
+
+  uploadedTracks Track[]         @relation("TrackUploader")
+  playlists      Playlist[]      @relation("UserPlaylists")
+  trackLikes     TrackLike[]
+  playlistLikes  PlaylistLike[]
+  listenHistory  ListenHistory[]
+
+  @@index([email])
+  @@index([username])
+}
+
+model Artist {
+  id               String   @id @default(uuid())
+  name             String
+  bio              String?  @db.Text
+  avatarUrl        String?
+  headerImageUrl   String?
+  monthlyListeners Int      @default(0)
+  isVerified       Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  tracks Track[]
+  albums Album[]
+
+  @@index([name])
+  @@index([monthlyListeners(sort: Desc)])
+}
+
+// -----------------------------------------------------------------------------
+// Music Catalog (Album, Track)
+// -----------------------------------------------------------------------------
+
+model Album {
+  id            String    @id @default(uuid())
+  title         String
+  coverImageUrl String?
+  releaseDate   DateTime?
+  genre         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  artistId String
+  artist   Artist  @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  tracks   Track[]
+
+  @@index([artistId])
+  @@index([title])
+  @@index([releaseDate(sort: Desc)])
+}
+
+model Track {
+  id              String      @id @default(uuid())
+  title           String
+  duration        Float       // Saniye cinsinden parça süresi (örn: 214.5)
+  audioStorageKey String      // S3 object key (örn: "tracks/uuid.mp3") - Güvenli presigned URL için
+  audioFormat     AudioFormat @default(MP3)
+  fileSize        BigInt      // Byte cinsinden dosya boyutu
+  bitRate         Int?        // kbps (örn: 320)
+  coverImageUrl   String?
+  genre           String?
+  playCount       BigInt      @default(0)
+  isExplicit      Boolean     @default(false)
+  
+  // Waveform verisi: Tarayıcı 30 MB mp3 dosyasını indirmeden ses dalgalarını çizebilsin diye
+  waveformData    Json?
+
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  artistId       String
+  artist         Artist          @relation(fields: [artistId], references: [id], onDelete: Cascade)
+  albumId        String?
+  album          Album?          @relation(fields: [albumId], references: [id], onDelete: SetNull)
+  uploaderId     String
+  uploader       User            @relation("TrackUploader", fields: [uploaderId], references: [id], onDelete: Cascade)
+  playlistTracks PlaylistTrack[]
+  likes          TrackLike[]
+  listenHistory  ListenHistory[]
+
+  @@index([title])
+  @@index([genre])
+  @@index([artistId])
+  @@index([albumId])
+  // Cursor-based Pagination (Sonsuz kaydırma) indeksi
+  @@index([createdAt(sort: Desc), id])
+  // En çok dinlenenler listeleri için indeks
+  @@index([playCount(sort: Desc)])
+}
+
+// -----------------------------------------------------------------------------
+// Playlists & Curation
+// -----------------------------------------------------------------------------
+
+model Playlist {
+  id            String   @id @default(uuid())
+  title         String
+  description   String?  @db.Text
+  coverImageUrl String?
+  isPublic      Boolean  @default(true)
+  totalDuration Float    @default(0) // Şarkı eklendikçe otomatik artan sayaç
+  trackCount    Int      @default(0) // Cache sayaç
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ownerId String
+  owner   User   @relation("UserPlaylists", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  tracks PlaylistTrack[]
+  likes  PlaylistLike[]
+
+  @@index([ownerId])
+  @@index([isPublic, createdAt(sort: Desc)])
+}
+
+model PlaylistTrack {
+  id         String   @id @default(uuid())
+  order      Int
+  addedAt    DateTime @default(now())
+
+  playlistId String
+  playlist   Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+  trackId    String
+  track      Track    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([playlistId, trackId])
+  @@index([playlistId, order])
+}
+
+// -----------------------------------------------------------------------------
+// Engagement & History
+// -----------------------------------------------------------------------------
+
+model TrackLike {
+  userId    String
+  trackId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track Track @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@id([userId, trackId])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model PlaylistLike {
+  userId     String
+  playlistId String
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playlist Playlist @relation(fields: [playlistId], references: [id], onDelete: Cascade)
+
+  @@id([userId, playlistId])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model ListenHistory {
+  id             String   @id @default(uuid())
+  userId         String
+  trackId        String
+  durationPlayed Float
+  completed      Boolean  @default(false)
+  listenedAt     DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  track Track @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@index([userId, listenedAt(sort: Desc), id])
+  @@index([trackId])
+}
