@@ -99,17 +99,17 @@ model Album {
 model Track {
   id              String      @id @default(uuid())
   title           String
-  duration        Float       // Saniye cinsinden parça süresi (örn: 214.5)
-  audioStorageKey String      // S3 object key (örn: "tracks/uuid.mp3") - Güvenli presigned URL için
+  duration        Float       // Duration in seconds (e.g., 214.5)
+  audioStorageKey String      // S3 object key (e.g., "tracks/uuid.mp3") - secure presigned streaming
   audioFormat     AudioFormat @default(MP3)
-  fileSize        BigInt      // Byte cinsinden dosya boyutu
-  bitRate         Int?        // kbps (örn: 320)
+  fileSize        BigInt      // File size in bytes
+  bitRate         Int?        // Bitrate in kbps (e.g., 320)
   coverImageUrl   String?
   genre           String?
   playCount       BigInt      @default(0)
   isExplicit      Boolean     @default(false)
   
-  // Waveform verisi: Tarayıcı 30 MB mp3 dosyasını indirmeden ses dalgalarını çizebilsin diye
+  // Waveform peak data: enables instant waveform rendering without downloading full audio
   waveformData    Json?
 
   createdAt       DateTime    @default(now())
@@ -129,9 +129,9 @@ model Track {
   @@index([genre])
   @@index([artistId])
   @@index([albumId])
-  // Cursor-based Pagination (Sonsuz kaydırma) indeksi
+  // Cursor-based pagination composite index
   @@index([createdAt(sort: Desc), id])
-  // En çok dinlenenler listeleri için indeks
+  // Top charts and trending feed index
   @@index([playCount(sort: Desc)])
 }
 
@@ -145,8 +145,8 @@ model Playlist {
   description   String?  @db.Text
   coverImageUrl String?
   isPublic      Boolean  @default(true)
-  totalDuration Float    @default(0) // Şarkı eklendikçe otomatik artan sayaç
-  trackCount    Int      @default(0) // Cache sayaç
+  totalDuration Float    @default(0) // Sum of track durations in seconds (atomically updated)
+  trackCount    Int      @default(0) // Cached track count for fast feeds
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
