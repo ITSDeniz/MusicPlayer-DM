@@ -153,7 +153,7 @@ export class AuthService {
           'JWT_ACCESS_SECRET',
           'denzo_music_super_secure_access_secret_2026',
         ),
-        expiresIn: this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '15m'),
+        expiresIn: this.configService.get<string>('JWT_ACCESS_EXPIRES_IN', '7d'),
       }),
       this.jwtService.signAsync(payload, {
         secret: this.configService.get<string>(

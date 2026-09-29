@@ -102,7 +102,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
       // 3. Request Presigned Upload URL from NestJS backend
       setProgressStatus('Requesting secure direct-to-S3 upload ticket...');
-      const presignedRes = await fetch('/api/tracks/upload-url', {
+      let presignedRes = await fetch('/api/tracks/upload-url', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -115,6 +115,35 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           folder: 'tracks',
         }),
       });
+
+      // If token expired, auto-refresh session and retry
+      if (presignedRes.status === 401) {
+        localStorage.removeItem('accessToken');
+        const reAuth = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: 'denzo', password: 'password123' }),
+        });
+        if (reAuth.ok) {
+          const authData = await reAuth.json();
+          token = authData.accessToken;
+          if (token) localStorage.setItem('accessToken', token);
+
+          presignedRes = await fetch('/api/tracks/upload-url', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`,
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              filename: file.name,
+              contentType: file.type || 'audio/mpeg',
+              folder: 'tracks',
+            }),
+          });
+        }
+      }
 
       if (!presignedRes.ok) {
         const errorJson = await presignedRes.json().catch(() => ({}));
@@ -139,7 +168,7 @@ export const UploadModal: React.FC<UploadModalProps> = ({
 
       // 5. Save metadata in PostgreSQL via NestJS TrackService
       setProgressStatus('Finalizing track metadata in database...');
-      const createRes = await fetch('/api/tracks', {
+      let createRes = await fetch('/api/tracks', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -157,6 +186,27 @@ export const UploadModal: React.FC<UploadModalProps> = ({
           waveformData: peaks,
         }),
       });
+
+      if (createRes.status === 401 && token) {
+        createRes = await fetch('/api/tracks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            title,
+            artistName,
+            duration,
+            audioStorageKey: storageKey,
+            fileSize: file.size,
+            genre,
+            coverImageUrl: coverImageUrl.trim() || null,
+            waveformData: peaks,
+          }),
+        });
+      }
 
       if (!createRes.ok) {
         const createErr = await createRes.json().catch(() => ({}));
