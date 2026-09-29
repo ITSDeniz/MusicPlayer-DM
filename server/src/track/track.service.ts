@@ -78,6 +78,7 @@ export class TrackService {
     return {
       ...track,
       fileSize: track.fileSize.toString(),
+      playCount: track.playCount.toString(),
       streamUrl,
     };
   }

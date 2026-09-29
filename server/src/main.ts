@@ -3,6 +3,11 @@ import { ValidationPipe, Logger } from '@nestjs/common';
 import * as cookieParser from 'cookie-parser';
 import { AppModule } from './app.module';
 
+// Global polyfill for Prisma BigInt JSON serialization
+(BigInt.prototype as any).toJSON = function () {
+  return this.toString();
+};
+
 async function bootstrap() {
   const logger = new Logger('DenzoMusicBootstrap');
   const app = await NestFactory.create(AppModule);
