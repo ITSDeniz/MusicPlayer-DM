@@ -37,6 +37,7 @@ export class AuthController {
   ) {
     const { user, tokens } = await this.authService.register(dto);
     this.setRefreshTokenCookie(res, tokens.refreshToken);
+    this.setAccessTokenCookie(res, tokens.accessToken);
     return { user, accessToken: tokens.accessToken };
   }
 
@@ -48,6 +49,7 @@ export class AuthController {
   ) {
     const { user, tokens } = await this.authService.login(dto);
     this.setRefreshTokenCookie(res, tokens.refreshToken);
+    this.setAccessTokenCookie(res, tokens.accessToken);
     return { user, accessToken: tokens.accessToken };
   }
 
@@ -64,12 +66,19 @@ export class AuthController {
 
     const tokens = await this.authService.refreshTokens(refreshToken);
     this.setRefreshTokenCookie(res, tokens.refreshToken);
+    this.setAccessTokenCookie(res, tokens.accessToken);
     return { accessToken: tokens.accessToken };
   }
 
   @HttpCode(HttpStatus.OK)
   @Post('logout')
   logout(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie('accessToken', {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+    });
     res.clearCookie('refreshToken', {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -83,6 +92,17 @@ export class AuthController {
   @Get('me')
   getMe(@Req() req: AuthenticatedRequest) {
     return this.authService.getMe(req.user.id);
+  }
+
+  private setAccessTokenCookie(res: Response, accessToken: string): void {
+    const fifteenMinutesInMs = 15 * 60 * 1000;
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: fifteenMinutesInMs,
+      path: '/',
+    });
   }
 
   private setRefreshTokenCookie(res: Response, refreshToken: string): void {

@@ -62,8 +62,9 @@ services:
       - minio
     entrypoint: >
       /bin/sh -c "
+      sleep 2;
       /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin123;
-      /usr/bin/mc mb myminio/denzo-music-media;
+      /usr/bin/mc mb --ignore-existing myminio/denzo-music-media;
       /usr/bin/mc anonymous set download myminio/denzo-music-media;
       exit 0;
       "
