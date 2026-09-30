@@ -393,7 +393,14 @@ export default function App() {
       onTrackDeleted(track.id);
       setTracks((prev) => prev.filter((t) => t.id !== track.id));
       setLikedTracks((prev) => prev.filter((t) => t.id !== track.id));
-      setPlaylistTracks((prev) => prev.filter((t) => t.id !== track.id));
+      setPlaylistTracks((prev) => {
+        const next = prev.filter((t) => t.id !== track.id);
+        const newTotal = next.reduce((sum, t) => sum + (t.duration || 0), 0);
+        setSelectedPlaylist((pl: any) =>
+          pl ? { ...pl, totalDuration: newTotal, trackCount: next.length } : pl,
+        );
+        return next;
+      });
     } catch (err: any) {
       alert(err.message || 'Error deleting track');
     }
@@ -458,7 +465,14 @@ export default function App() {
       });
 
       if (res.ok) {
-        setPlaylistTracks((prev) => prev.filter((t) => t.id !== trackId));
+        setPlaylistTracks((prev) => {
+          const next = prev.filter((t) => t.id !== trackId);
+          const newTotal = next.reduce((sum, t) => sum + (t.duration || 0), 0);
+          setSelectedPlaylist((pl: any) =>
+            pl ? { ...pl, totalDuration: newTotal, trackCount: next.length } : pl,
+          );
+          return next;
+        });
         fetchPlaylists();
       }
     } catch (err) {
@@ -966,7 +980,7 @@ export default function App() {
                     <p className="text-xs text-denzo-muted mb-2 max-w-xl">{selectedPlaylist.description}</p>
                   )}
                   <p className="text-xs text-zinc-400">
-                    Created by {selectedPlaylist.owner?.username || 'You'} • {playlistTracks.length} tracks • {formatDuration(selectedPlaylist.totalDuration || 0)}
+                    Created by {selectedPlaylist.owner?.username || 'You'} • {playlistTracks.length} tracks • {formatDuration(playlistTracks.reduce((acc, t) => acc + (t.duration || 0), 0))}
                   </p>
                 </div>
 

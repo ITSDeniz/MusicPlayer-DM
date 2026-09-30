@@ -357,6 +357,25 @@ export class TrackService {
       this.logger.warn(`Failed to delete S3 file ${track.audioStorageKey}: ${err?.message}`);
     }
 
+    // Decrement playlist counters for playlists containing this track
+    try {
+      const playlistTracks = await this.prisma.playlistTrack.findMany({
+        where: { trackId },
+        include: { playlist: true },
+      });
+      for (const pt of playlistTracks) {
+        await this.prisma.playlist.update({
+          where: { id: pt.playlistId },
+          data: {
+            trackCount: { decrement: 1 },
+            totalDuration: { decrement: Math.min(pt.playlist.totalDuration, track.duration || 0) },
+          },
+        }).catch(() => {});
+      }
+    } catch (err: any) {
+      this.logger.warn(`Failed to update playlist stats on track deletion: ${err?.message}`);
+    }
+
     await this.prisma.track.delete({
       where: { id: trackId },
     });

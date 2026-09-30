@@ -125,8 +125,12 @@ export class PlaylistService {
       }),
     );
 
+    const calculatedDuration = tracksWithUrls.reduce((acc, t) => acc + (t.duration || 0), 0);
+
     return {
       ...playlist,
+      totalDuration: calculatedDuration,
+      trackCount: tracksWithUrls.length,
       tracks: tracksWithUrls,
     };
   }
@@ -283,6 +287,9 @@ export class PlaylistService {
       throw new NotFoundException('Track is not in this playlist');
     }
 
+    const newTrackCount = Math.max(0, playlist.trackCount - 1);
+    const newTotalDuration = Math.max(0, playlist.totalDuration - (playlistTrack.track.duration || 0));
+
     // Atomic transaction
     await this.prisma.$transaction([
       this.prisma.playlistTrack.delete({
@@ -296,8 +303,8 @@ export class PlaylistService {
       this.prisma.playlist.update({
         where: { id: playlistId },
         data: {
-          trackCount: { decrement: 1 },
-          totalDuration: { decrement: Math.min(playlist.totalDuration, playlistTrack.track.duration) },
+          trackCount: newTrackCount,
+          totalDuration: newTotalDuration,
         },
       }),
     ]);
