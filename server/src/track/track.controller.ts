@@ -54,6 +54,11 @@ export class TrackController {
     return this.trackService.getTracks(dto);
   }
 
+  @Get('top')
+  getTopTracks(@Query('limit') limit?: number) {
+    return this.trackService.getTopTracks(limit ? Number(limit) : 10);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('liked')
   getLikedTracks(
@@ -61,6 +66,22 @@ export class TrackController {
     @Query() dto: QueryTracksDto,
   ) {
     return this.trackService.getLikedTracks(req.user.id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('history')
+  getListenHistory(@Req() req: AuthenticatedRequest) {
+    return this.trackService.getListenHistory(req.user.id);
+  }
+
+  @Post(':id/play')
+  recordPlay(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @Body('duration') duration?: number,
+  ) {
+    const user = (req as any).user;
+    return this.trackService.recordPlay(id, user?.id, duration || 0);
   }
 
   @Get(':id')

@@ -8,6 +8,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { RedisService } from '../redis/redis.service';
 import { RequestUploadUrlDto } from './dto/request-upload-url.dto';
 import { CreateTrackDto } from './dto/create-track.dto';
 import { QueryTracksDto } from './dto/query-tracks.dto';
@@ -26,6 +27,7 @@ export class TrackService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
+    private readonly redis: RedisService,
   ) {}
 
   /**
@@ -77,6 +79,9 @@ export class TrackService {
 
     const streamUrl = await this.storageService.getStreamPresignedUrl(track.audioStorageKey);
 
+    // Invalidate Redis feed & top caches
+    await this.redis.delByPattern('tracks:*');
+
     return {
       ...track,
       fileSize: track.fileSize.toString(),
@@ -91,6 +96,18 @@ export class TrackService {
    */
   async getTracks(dto: QueryTracksDto, currentUserId?: string): Promise<PaginatedTracksResult> {
     const limit = dto.limit ?? 20;
+
+    // 1. Check Redis cache for first-page public feed requests
+    const isFirstPagePublic = !dto.cursor && !currentUserId;
+    const cacheKey = `tracks:feed:${dto.genre || 'all'}:${dto.search || ''}:${limit}`;
+
+    if (isFirstPagePublic) {
+      const cached = await this.redis.get<PaginatedTracksResult>(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    }
+
     const where: Prisma.TrackWhereInput = {};
 
     if (dto.genre) {
@@ -167,11 +184,18 @@ export class TrackService {
       }),
     );
 
-    return {
+    const result: PaginatedTracksResult = {
       items: tracksWithUrls,
       nextCursor,
       hasMore,
     };
+
+    // Cache first-page public queries for 60 seconds
+    if (isFirstPagePublic) {
+      await this.redis.set(cacheKey, result, 60);
+    }
+
+    return result;
   }
 
   /**
@@ -337,7 +361,128 @@ export class TrackService {
       where: { id: trackId },
     });
 
+    // Invalidate Redis cache
+    await this.redis.delByPattern('tracks:*');
+
     return { success: true, message: 'Track deleted successfully' };
+  }
+
+  /**
+   * Retrieves Top Charts (most played tracks) with Redis caching.
+   */
+  async getTopTracks(limit: number = 10) {
+    const cacheKey = `tracks:top:${limit}`;
+    const cached = await this.redis.get<any[]>(cacheKey);
+    if (cached) return cached;
+
+    const tracks = await this.prisma.track.findMany({
+      take: limit,
+      orderBy: [{ playCount: 'desc' }, { createdAt: 'desc' }],
+      include: {
+        artist: { select: { id: true, name: true, avatarUrl: true } },
+      },
+    });
+
+    const withUrls = await Promise.all(
+      tracks.map(async (t) => {
+        let streamUrl = '';
+        try {
+          streamUrl = await this.storageService.getStreamPresignedUrl(t.audioStorageKey);
+        } catch {}
+        return {
+          id: t.id,
+          title: t.title,
+          duration: t.duration,
+          audioFormat: t.audioFormat,
+          coverImageUrl: t.coverImageUrl,
+          genre: t.genre,
+          playCount: t.playCount.toString(),
+          isExplicit: t.isExplicit,
+          waveformData: t.waveformData,
+          createdAt: t.createdAt,
+          artist: t.artist,
+          streamUrl,
+          uploaderId: t.uploaderId,
+        };
+      }),
+    );
+
+    await this.redis.set(cacheKey, withUrls, 120); // 2 minutes TTL
+    return withUrls;
+  }
+
+  /**
+   * Records a track play and persists listen history.
+   */
+  async recordPlay(trackId: string, userId?: string, durationPlayed: number = 0) {
+    const track = await this.prisma.track.findUnique({ where: { id: trackId } });
+    if (!track) throw new NotFoundException('Track not found');
+
+    const updated = await this.prisma.track.update({
+      where: { id: trackId },
+      data: { playCount: { increment: 1 } },
+      select: { id: true, playCount: true },
+    });
+
+    if (userId) {
+      await this.prisma.listenHistory.create({
+        data: {
+          userId,
+          trackId,
+          durationPlayed,
+          completed: durationPlayed >= 20,
+        },
+      }).catch((err) => {
+        this.logger.warn(`Failed to create listen history: ${err.message}`);
+      });
+    }
+
+    return { success: true, playCount: updated.playCount.toString() };
+  }
+
+  /**
+   * Retrieves recently listened tracks for the user.
+   */
+  async getListenHistory(userId: string, limit: number = 20) {
+    const history = await this.prisma.listenHistory.findMany({
+      where: { userId },
+      take: limit,
+      orderBy: { listenedAt: 'desc' },
+      include: {
+        track: {
+          include: {
+            artist: { select: { id: true, name: true, avatarUrl: true } },
+          },
+        },
+      },
+    });
+
+    const items = await Promise.all(
+      history.map(async (h) => {
+        let streamUrl = '';
+        try {
+          streamUrl = await this.storageService.getStreamPresignedUrl(h.track.audioStorageKey);
+        } catch {}
+        return {
+          id: h.track.id,
+          title: h.track.title,
+          duration: h.track.duration,
+          audioFormat: h.track.audioFormat,
+          coverImageUrl: h.track.coverImageUrl,
+          genre: h.track.genre,
+          playCount: h.track.playCount.toString(),
+          isExplicit: h.track.isExplicit,
+          waveformData: h.track.waveformData,
+          createdAt: h.track.createdAt,
+          artist: h.track.artist,
+          streamUrl,
+          uploaderId: h.track.uploaderId,
+          listenedAt: h.listenedAt,
+        };
+      }),
+    );
+
+    return items;
   }
 
   /**

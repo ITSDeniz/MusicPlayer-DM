@@ -14,6 +14,8 @@ import {
   Plus,
   ListMusic,
   X,
+  TrendingUp,
+  History,
 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { BottomPlayer } from './components/BottomPlayer';
@@ -57,6 +59,8 @@ export default function App() {
   // Data state
   const [tracks, setTracks] = useState<Track[]>([]);
   const [likedTracks, setLikedTracks] = useState<Track[]>([]);
+  const [topTracks, setTopTracks] = useState<Track[]>([]);
+  const [historyTracks, setHistoryTracks] = useState<any[]>([]);
   const [playlists, setPlaylists] = useState<any[]>([]);
   const [selectedPlaylist, setSelectedPlaylist] = useState<any | null>(null);
   const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
@@ -197,18 +201,75 @@ export default function App() {
     }
   }, []);
 
+  // Fetch top played tracks (Redis cached)
+  const fetchTopTracks = useCallback(async () => {
+    try {
+      const res = await fetch('/api/tracks/top?limit=6');
+      if (res.ok) {
+        const data = await res.json();
+        setTopTracks(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch top tracks:', err);
+    }
+  }, []);
+
+  // Fetch user's listen history
+  const fetchHistoryTracks = useCallback(async () => {
+    if (!currentUser) return;
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/tracks/history', {
+        headers,
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryTracks(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch listen history:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentUser]);
+
   useEffect(() => {
     if (currentTab === 'home' || currentTab === 'discover') {
       const timer = setTimeout(() => {
         fetchTracks();
+        fetchTopTracks();
       }, 250);
       return () => clearTimeout(timer);
     } else if (currentTab === 'liked') {
       fetchLikedTracks();
     } else if (currentTab === 'library') {
       fetchPlaylists();
+    } else if (currentTab === 'history') {
+      fetchHistoryTracks();
     }
-  }, [currentTab, fetchTracks, fetchLikedTracks, fetchPlaylists]);
+  }, [currentTab, fetchTracks, fetchTopTracks, fetchLikedTracks, fetchPlaylists, fetchHistoryTracks]);
+
+  // Record play event & update audio engine
+  const handlePlayTrack = (track: Track, newQueue?: Track[]) => {
+    playTrack(track, newQueue);
+
+    // Record play event in backend (increments playCount & creates ListenHistory)
+    const token = localStorage.getItem('accessToken');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    fetch(`/api/tracks/${track.id}/play`, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: JSON.stringify({ duration: 1 }),
+    }).catch(() => {});
+  };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -424,7 +485,7 @@ export default function App() {
       <Sidebar
         currentTab={currentTab}
         onSelectTab={(tab) => {
-          if ((tab === 'liked' || tab === 'library') && !currentUser) {
+          if ((tab === 'liked' || tab === 'library' || tab === 'history') && !currentUser) {
             setIsAuthOpen(true);
             return;
           }
@@ -512,7 +573,7 @@ export default function App() {
 
                     {tracks.length > 0 && (
                       <button
-                        onClick={() => playTrack(tracks[0], tracks)}
+                        onClick={() => handlePlayTrack(tracks[0], tracks)}
                         className="flex items-center gap-2.5 px-5 py-3 rounded-xl bg-denzo-gradient hover:bg-denzo-gradient-hover text-white font-semibold text-sm shadow-denzo-glow transition-all hover:scale-105 active:scale-95"
                       >
                         <Play size={18} fill="currentColor" />
@@ -520,6 +581,56 @@ export default function App() {
                       </button>
                     )}
                   </div>
+                </div>
+              </section>
+            )}
+
+            {/* Top Charts Section (Redis Cached) */}
+            {topTracks.length > 0 && (
+              <section className="px-8 pt-2 pb-2">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <TrendingUp size={18} className="text-denzo-rose" />
+                    <h2 className="text-base font-bold text-white tracking-tight">Top Charts</h2>
+                    <span className="px-2 py-0.5 rounded-full bg-denzo-rose/10 border border-denzo-rose/30 text-[10px] font-semibold text-denzo-rose">
+                      ⚡ Redis Cached
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                  {topTracks.map((track, i) => (
+                    <div
+                      key={`top-${track.id}`}
+                      onClick={() => handlePlayTrack(track, topTracks)}
+                      className="group relative p-3 rounded-2xl bg-denzo-surface/50 hover:bg-denzo-card border border-denzo-border/50 hover:border-denzo-rose/40 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+                    >
+                      <div className="relative w-full aspect-square rounded-xl bg-zinc-900 border border-denzo-border overflow-hidden mb-2.5">
+                        {track.coverImageUrl ? (
+                          <img src={track.coverImageUrl} alt={track.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                            <Music size={24} />
+                          </div>
+                        )}
+                        <span className="absolute top-2 left-2 w-6 h-6 rounded-lg bg-black/75 backdrop-blur-md text-[11px] font-bold text-denzo-rose flex items-center justify-center border border-white/10">
+                          #{i + 1}
+                        </span>
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                          <Play size={22} fill="white" className="text-white ml-0.5" />
+                        </div>
+                      </div>
+                      <p className="text-xs font-semibold text-white truncate group-hover:text-denzo-rose transition-colors">
+                        {track.title}
+                      </p>
+                      <p className="text-[11px] text-denzo-muted truncate">
+                        {track.artist?.name || 'Unknown Artist'}
+                      </p>
+                      <p className="text-[10px] text-zinc-500 font-mono mt-1">
+                        ▶ {track.playCount ?? 0} plays
+                      </p>
+                    </div>
+                  ))}
                 </div>
               </section>
             )}
@@ -580,7 +691,7 @@ export default function App() {
                         key={track.id}
                         onClick={() => {
                           if (isThisCurrent) togglePlay();
-                          else playTrack(track, tracks);
+                          else handlePlayTrack(track, tracks);
                         }}
                         className={`group flex items-center justify-between px-4 py-3 rounded-xl transition-all cursor-pointer border ${
                           isThisCurrent
@@ -1066,6 +1177,139 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {/* ----------------- TAB: HISTORY VIEW ----------------- */}
+        {currentTab === 'history' && (
+          <section className="px-8 py-6 flex-1 flex flex-col">
+            <div className="relative overflow-hidden rounded-3xl p-8 bg-gradient-to-r from-zinc-900 via-denzo-card to-zinc-950 border border-denzo-border/70 shadow-2xl mb-6">
+              <div className="flex flex-col md:flex-row items-start md:items-center gap-6 relative z-10">
+                <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-zinc-800 to-zinc-900 border border-white/10 flex items-center justify-center shadow-xl flex-shrink-0">
+                  <History size={40} className="text-denzo-rose" />
+                </div>
+                <div className="flex-1">
+                  <span className="text-xs uppercase font-bold tracking-wider text-denzo-rose">Activity</span>
+                  <h1 className="text-3xl lg:text-4xl font-extrabold text-white mt-1 mb-2">Listening History</h1>
+                  <p className="text-xs text-denzo-muted">
+                    {currentUser?.username || 'You'} • {historyTracks.length} tracks recently played
+                  </p>
+                </div>
+                {historyTracks.length > 0 && (
+                  <button
+                    onClick={() => handlePlayTrack(historyTracks[0], historyTracks)}
+                    className="flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-denzo-gradient hover:bg-denzo-gradient-hover text-white font-semibold text-sm shadow-denzo-glow transition-all hover:scale-105 active:scale-95"
+                  >
+                    <Play size={18} fill="currentColor" />
+                    <span>Replay History</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {historyTracks.length === 0 ? (
+              <div className="py-20 flex flex-col items-center justify-center text-center border border-dashed border-denzo-border/70 rounded-2xl bg-denzo-surface/30">
+                <History size={36} className="text-zinc-600 mb-3" />
+                <h3 className="text-base font-bold text-white mb-1">No listening history yet</h3>
+                <p className="text-xs text-denzo-muted max-w-sm mb-4">
+                  Tracks you stream will automatically appear in your listening history.
+                </p>
+                <button
+                  onClick={() => setCurrentTab('home')}
+                  className="px-4 py-2 rounded-xl bg-denzo-surface hover:bg-denzo-card border border-denzo-border text-xs text-white"
+                >
+                  Start Listening
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {historyTracks.map((track, idx) => {
+                  const isThisPlaying = currentTrack?.id === track.id && isPlaying;
+                  const isThisCurrent = currentTrack?.id === track.id;
+
+                  return (
+                    <div
+                      key={`hist-${track.id}-${idx}`}
+                      onClick={() => {
+                        if (isThisCurrent) togglePlay();
+                        else handlePlayTrack(track, historyTracks);
+                      }}
+                      className={`group flex items-center justify-between px-4 py-3 rounded-xl transition-all cursor-pointer border ${
+                        isThisCurrent
+                          ? 'bg-denzo-card border-denzo-rose/40 shadow-sm'
+                          : 'bg-denzo-surface/40 hover:bg-denzo-card border-transparent hover:border-denzo-border/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4 min-w-0 w-2/5">
+                        <div className="w-6 text-center text-xs font-mono text-denzo-muted group-hover:hidden flex justify-center">
+                          {isThisPlaying ? (
+                            <div className="flex items-end gap-0.5 h-3.5">
+                              <span className="w-1 h-3 bg-denzo-rose animate-bounce" />
+                              <span className="w-1 h-3.5 bg-denzo-pink animate-pulse" />
+                              <span className="w-1 h-2 bg-denzo-rose animate-bounce" />
+                            </div>
+                          ) : (
+                            idx + 1
+                          )}
+                        </div>
+
+                        <button className="w-6 hidden group-hover:flex items-center justify-center text-white">
+                          {isThisPlaying ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+                        </button>
+
+                        <div className="relative w-11 h-11 rounded-lg bg-zinc-900 border border-denzo-border overflow-hidden flex-shrink-0">
+                          {track.coverImageUrl ? (
+                            <img src={track.coverImageUrl} alt={track.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                              <Music size={16} />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-sm font-semibold truncate ${isThisCurrent ? 'text-denzo-rose' : 'text-white'}`}>
+                            {track.title}
+                          </span>
+                          <span className="text-xs text-denzo-muted truncate">{track.artist?.name || 'Unknown Artist'}</span>
+                        </div>
+                      </div>
+
+                      <div className="hidden md:flex items-center w-1/4">
+                        <span className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-denzo-border/60 text-[11px] text-zinc-400 font-medium">
+                          {track.genre || 'Electronic'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <button
+                          onClick={(e) => handleOpenAddToPlaylist(track, e)}
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors opacity-0 group-hover:opacity-100"
+                          title="Add to Playlist"
+                        >
+                          <FolderPlus size={15} />
+                        </button>
+
+                        <button
+                          onClick={(e) => handleToggleLike(track, e)}
+                          className={`p-1.5 rounded-full transition-colors ${
+                            track.isLiked ? 'text-denzo-rose' : 'text-zinc-600 hover:text-white'
+                          }`}
+                          title={track.isLiked ? 'Unlike' : 'Like'}
+                        >
+                          <Heart size={16} fill={track.isLiked ? 'currentColor' : 'none'} />
+                        </button>
+
+                        <div className="flex items-center gap-1.5 text-xs font-mono text-denzo-muted w-14 justify-end">
+                          <Clock size={12} className="opacity-60" />
+                          <span>{formatDuration(track.duration)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         )}
       </main>

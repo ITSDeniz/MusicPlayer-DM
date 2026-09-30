@@ -4,6 +4,7 @@ import {
   Compass,
   Library,
   Heart,
+  History,
   PlusSquare,
   UploadCloud,
   Disc3,
@@ -100,6 +101,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <Heart size={18} className={currentTab === 'liked' ? 'text-denzo-rose' : ''} />
             <span>Liked Songs</span>
+          </button>
+
+          <button
+            onClick={() => onSelectTab('history')}
+            className={`w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+              currentTab === 'history'
+                ? 'bg-denzo-card text-white border-l-2 border-denzo-rose shadow-sm'
+                : 'text-denzo-muted hover:text-white hover:bg-denzo-card/50'
+            }`}
+          >
+            <History size={18} className={currentTab === 'history' ? 'text-denzo-rose' : ''} />
+            <span>History</span>
           </button>
         </nav>
 

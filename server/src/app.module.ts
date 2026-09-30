@@ -6,6 +6,7 @@ import { StorageModule } from './storage/storage.module';
 import { AuthModule } from './auth/auth.module';
 import { TrackModule } from './track/track.module';
 import { PlaylistModule } from './playlist/playlist.module';
+import { RedisModule } from './redis/redis.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { PlaylistModule } from './playlist/playlist.module';
       },
     ]),
     PrismaModule,
+    RedisModule,
     StorageModule,
     AuthModule,
     TrackModule,
