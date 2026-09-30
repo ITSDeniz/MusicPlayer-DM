@@ -430,7 +430,10 @@ export class TrackService {
           userId,
           trackId,
           durationPlayed,
-          completed: durationPlayed >= 20,
+          completed:
+            track.duration && track.duration < 30
+              ? durationPlayed >= Math.max(5, track.duration * 0.8)
+              : durationPlayed >= 30,
         },
       }).catch((err) => {
         this.logger.warn(`Failed to create listen history: ${err.message}`);

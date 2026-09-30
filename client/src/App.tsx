@@ -7,7 +7,6 @@ import {
   Clock,
   Music,
   LogOut,
-  Flame,
   Edit3,
   Trash2,
   FolderPlus,
@@ -254,21 +253,9 @@ export default function App() {
     }
   }, [currentTab, fetchTracks, fetchTopTracks, fetchLikedTracks, fetchPlaylists, fetchHistoryTracks]);
 
-  // Record play event & update audio engine
+  // Play track via audio engine (play count & listen history are recorded at the 30s milestone)
   const handlePlayTrack = (track: Track, newQueue?: Track[]) => {
     playTrack(track, newQueue);
-
-    // Record play event in backend (increments playCount & creates ListenHistory)
-    const token = localStorage.getItem('accessToken');
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    fetch(`/api/tracks/${track.id}/play`, {
-      method: 'POST',
-      headers,
-      credentials: 'include',
-      body: JSON.stringify({ duration: 1 }),
-    }).catch(() => {});
   };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -560,10 +547,6 @@ export default function App() {
                   <div className="absolute right-0 top-0 bottom-0 w-96 bg-denzo-gradient opacity-10 blur-3xl pointer-events-none" />
 
                   <div className="relative z-10 max-w-xl">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-denzo-rose/10 border border-denzo-rose/30 text-denzo-rose text-xs font-semibold mb-3">
-                      <Flame size={14} />
-                      <span>Next-Gen Audio Experience</span>
-                    </div>
                     <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight text-white mb-2 leading-tight">
                       Stream in Pure <span className="text-transparent bg-clip-text bg-denzo-gradient">Fidelity</span>
                     </h1>
@@ -592,9 +575,6 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <TrendingUp size={18} className="text-denzo-rose" />
                     <h2 className="text-base font-bold text-white tracking-tight">Top Charts</h2>
-                    <span className="px-2 py-0.5 rounded-full bg-denzo-rose/10 border border-denzo-rose/30 text-[10px] font-semibold text-denzo-rose">
-                      ⚡ Redis Cached
-                    </span>
                   </div>
                 </div>
 

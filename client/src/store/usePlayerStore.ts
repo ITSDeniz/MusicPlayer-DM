@@ -59,14 +59,68 @@ interface PlayerState {
 const audio = new Audio();
 audio.preload = 'metadata';
 
+// Playback session tracker to ensure a play is recorded only after 30 seconds of listening
+interface PlaySession {
+  trackId: string;
+  listenedSeconds: number;
+  hasRecorded: boolean;
+  lastTimestamp: number;
+}
+
+let activeSession: PlaySession | null = null;
+
+const recordTrackPlay = async (trackId: string, duration: number) => {
+  try {
+    const token = localStorage.getItem('accessToken');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    await fetch(`/api/tracks/${trackId}/play`, {
+      method: 'POST',
+      headers,
+      credentials: 'include',
+      body: JSON.stringify({ duration }),
+    });
+  } catch (err) {
+    console.warn('Failed to record track play:', err);
+  }
+};
+
 export const usePlayerStore = create<PlayerState>((set, get) => {
   // Sync Audio Element Events with Zustand State
   audio.ontimeupdate = () => {
-    set({ currentTime: audio.currentTime });
+    const currentSeconds = audio.currentTime;
+    set({ currentTime: currentSeconds });
 
     // Calculate buffer progress
     if (audio.buffered.length > 0) {
       set({ bufferedTime: audio.buffered.end(audio.buffered.length - 1) });
+    }
+
+    // Track listening duration for 30-second play milestone
+    if (activeSession && !activeSession.hasRecorded && !audio.paused) {
+      const now = Date.now();
+      const elapsed = (now - activeSession.lastTimestamp) / 1000;
+      activeSession.lastTimestamp = now;
+
+      // Accumulate real listening time (guard against background throttle gaps)
+      if (elapsed > 0 && elapsed < 3) {
+        activeSession.listenedSeconds += elapsed;
+      }
+
+      const currentTrack = get().currentTrack;
+      // Standard threshold: 30 seconds (or 80% if track is shorter than 30s)
+      const threshold =
+        currentTrack?.duration && currentTrack.duration < 30
+          ? Math.max(5, currentTrack.duration * 0.8)
+          : 30;
+
+      if (activeSession.listenedSeconds >= threshold || currentSeconds >= threshold) {
+        activeSession.hasRecorded = true;
+        recordTrackPlay(activeSession.trackId, Math.round(activeSession.listenedSeconds || currentSeconds));
+      }
+    } else if (activeSession) {
+      activeSession.lastTimestamp = Date.now();
     }
   };
 
@@ -75,16 +129,39 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
   };
 
   audio.onended = () => {
+    if (activeSession && !activeSession.hasRecorded) {
+      const currentTrack = get().currentTrack;
+      const threshold =
+        currentTrack?.duration && currentTrack.duration < 30
+          ? Math.max(5, currentTrack.duration * 0.8)
+          : 30;
+      if (activeSession.listenedSeconds >= threshold || audio.currentTime >= threshold) {
+        activeSession.hasRecorded = true;
+        recordTrackPlay(activeSession.trackId, Math.round(activeSession.listenedSeconds || audio.currentTime));
+      }
+    }
+
     const { repeatMode, nextTrack } = get();
     if (repeatMode === 'one') {
       audio.currentTime = 0;
+      activeSession = {
+        trackId: get().currentTrack?.id || '',
+        listenedSeconds: 0,
+        hasRecorded: false,
+        lastTimestamp: Date.now(),
+      };
       audio.play().catch(() => {});
     } else {
       nextTrack();
     }
   };
 
-  audio.onplay = () => set({ isPlaying: true });
+  audio.onplay = () => {
+    if (activeSession) {
+      activeSession.lastTimestamp = Date.now();
+    }
+    set({ isPlaying: true });
+  };
   audio.onpause = () => set({ isPlaying: false });
 
   return {
@@ -113,6 +190,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       } else {
         queueIndex = queue.findIndex((t) => t.id === track.id);
       }
+
+      activeSession = {
+        trackId: track.id,
+        listenedSeconds: 0,
+        hasRecorded: false,
+        lastTimestamp: Date.now(),
+      };
 
       set({
         currentTrack: track,
