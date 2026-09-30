@@ -9,6 +9,8 @@ import {
   Disc3,
 } from 'lucide-react';
 
+import { usePlayerStore } from '../store/usePlayerStore';
+
 interface SidebarProps {
   currentTab: string;
   onSelectTab: (tab: string) => void;
@@ -28,9 +30,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectPlaylist,
   selectedPlaylistId,
 }) => {
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
+
   return (
-    <aside className="w-64 h-full bg-denzo-surface border-r border-denzo-border/60 flex flex-col justify-between p-6 select-none flex-shrink-0">
-      <div className="flex flex-col gap-6 overflow-hidden">
+    <aside
+      className={`w-64 h-full bg-denzo-surface border-r border-denzo-border/60 flex flex-col justify-between px-6 pt-6 select-none flex-shrink-0 transition-all z-30 ${
+        currentTrack ? 'pb-28' : 'pb-6'
+      }`}
+    >
+      <div className="flex flex-col gap-5 overflow-hidden flex-1 min-h-0">
         {/* Brand Logo */}
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-denzo-gradient flex items-center justify-center shadow-denzo-glow">
@@ -141,7 +149,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Upload Track Button */}
       <button
         onClick={onOpenUpload}
-        className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-denzo-card to-zinc-900 border border-denzo-border/80 hover:border-denzo-rose/60 text-sm font-medium text-white transition-all shadow-sm hover:shadow-denzo-glow-sm group"
+        className="w-full flex-shrink-0 mt-3 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-denzo-card to-zinc-900 border border-denzo-border/80 hover:border-denzo-rose/60 text-sm font-medium text-white transition-all shadow-sm hover:shadow-denzo-glow-sm group"
       >
         <UploadCloud size={18} className="text-denzo-rose group-hover:scale-110 transition-transform" />
         <span>Upload Audio</span>
