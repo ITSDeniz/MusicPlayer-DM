@@ -54,6 +54,15 @@ export class TrackController {
     return this.trackService.getTracks(dto);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('liked')
+  getLikedTracks(
+    @Req() req: AuthenticatedRequest,
+    @Query() dto: QueryTracksDto,
+  ) {
+    return this.trackService.getLikedTracks(req.user.id, dto);
+  }
+
   @Get(':id')
   getTrackById(@Param('id') id: string) {
     return this.trackService.getTrackById(id);

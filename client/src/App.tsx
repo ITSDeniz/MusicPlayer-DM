@@ -10,11 +10,16 @@ import {
   Flame,
   Edit3,
   Trash2,
+  FolderPlus,
+  Plus,
+  ListMusic,
 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { BottomPlayer } from './components/BottomPlayer';
 import { UploadModal } from './components/UploadModal';
 import { EditModal } from './components/EditModal';
+import { CreatePlaylistModal } from './components/CreatePlaylistModal';
+import { AddToPlaylistModal } from './components/AddToPlaylistModal';
 import { usePlayerStore, Track } from './store/usePlayerStore';
 
 function formatDuration(seconds: number): string {
@@ -30,9 +35,16 @@ export default function App() {
   const [currentTab, setCurrentTab] = useState('home');
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Modals state
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
+  const [isCreatePlaylistOpen, setIsCreatePlaylistOpen] = useState(false);
+  const [isAddToPlaylistOpen, setIsAddToPlaylistOpen] = useState(false);
+  const [trackForPlaylist, setTrackForPlaylist] = useState<Track | null>(null);
+
+  // Auth state
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
@@ -41,7 +53,12 @@ export default function App() {
   const [authError, setAuthError] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
 
+  // Data state
   const [tracks, setTracks] = useState<Track[]>([]);
+  const [likedTracks, setLikedTracks] = useState<Track[]>([]);
+  const [playlists, setPlaylists] = useState<any[]>([]);
+  const [selectedPlaylist, setSelectedPlaylist] = useState<any | null>(null);
+  const [playlistTracks, setPlaylistTracks] = useState<Track[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
 
@@ -62,6 +79,35 @@ export default function App() {
       .then((user) => setCurrentUser(user))
       .catch(() => {});
   }, []);
+
+  // Fetch user's playlists
+  const fetchPlaylists = useCallback(async () => {
+    if (!currentUser) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/playlists/my', {
+        headers,
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPlaylists(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch playlists:', err);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (currentUser) {
+      fetchPlaylists();
+    } else {
+      setPlaylists([]);
+    }
+  }, [currentUser, fetchPlaylists]);
 
   // Fetch tracks feed with cursor pagination
   const fetchTracks = useCallback(
@@ -88,12 +134,66 @@ export default function App() {
     [selectedGenre, searchQuery],
   );
 
+  // Fetch user's liked tracks
+  const fetchLikedTracks = useCallback(async () => {
+    if (!currentUser) return;
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/tracks/liked', {
+        headers,
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLikedTracks(data.items);
+      }
+    } catch (err) {
+      console.error('Failed to fetch liked tracks:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [currentUser]);
+
+  // Fetch single playlist details
+  const fetchPlaylistDetails = useCallback(async (playlistId: string) => {
+    setIsLoading(true);
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/playlists/${playlistId}`, {
+        headers,
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSelectedPlaylist(data);
+        setPlaylistTracks(data.tracks || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch playlist details:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      fetchTracks();
-    }, 250);
-    return () => clearTimeout(timer);
-  }, [fetchTracks]);
+    if (currentTab === 'home' || currentTab === 'discover') {
+      const timer = setTimeout(() => {
+        fetchTracks();
+      }, 250);
+      return () => clearTimeout(timer);
+    } else if (currentTab === 'liked') {
+      fetchLikedTracks();
+    } else if (currentTab === 'library') {
+      fetchPlaylists();
+    }
+  }, [currentTab, fetchTracks, fetchLikedTracks, fetchPlaylists]);
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,10 +216,15 @@ export default function App() {
         throw new Error(data.message || 'Authentication failed');
       }
 
+      if (data.accessToken) {
+        localStorage.setItem('accessToken', data.accessToken);
+      }
+
       setCurrentUser(data.user);
       setIsAuthOpen(false);
       setAuthPassword('');
       fetchTracks();
+      fetchPlaylists();
     } catch (err: any) {
       setAuthError(err.message || 'An error occurred during authentication.');
     }
@@ -127,19 +232,46 @@ export default function App() {
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
+    localStorage.removeItem('accessToken');
     setCurrentUser(null);
+    setPlaylists([]);
+    setLikedTracks([]);
+    if (currentTab === 'liked' || currentTab === 'library' || currentTab === 'playlist') {
+      setCurrentTab('home');
+    }
   };
 
   const handleToggleLike = async (track: Track, e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!currentUser) {
+      setIsAuthOpen(true);
+      return;
+    }
+
     const newStatus = !track.isLiked;
     setLikeStatus(track.id, newStatus);
     setTracks((prev) =>
       prev.map((t) => (t.id === track.id ? { ...t, isLiked: newStatus } : t)),
     );
+    setLikedTracks((prev) =>
+      newStatus
+        ? [...prev, { ...track, isLiked: true }]
+        : prev.filter((t) => t.id !== track.id),
+    );
+    setPlaylistTracks((prev) =>
+      prev.map((t) => (t.id === track.id ? { ...t, isLiked: newStatus } : t)),
+    );
 
     try {
-      await fetch(`/api/tracks/${track.id}/like`, { method: 'POST' });
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      await fetch(`/api/tracks/${track.id}/like`, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+      });
     } catch {
       setLikeStatus(track.id, !newStatus);
     }
@@ -158,6 +290,12 @@ export default function App() {
   const handleEditSuccess = (updatedTrack: Track) => {
     updateTrackData(updatedTrack);
     setTracks((prev) =>
+      prev.map((t) => (t.id === updatedTrack.id ? { ...t, ...updatedTrack } : t)),
+    );
+    setLikedTracks((prev) =>
+      prev.map((t) => (t.id === updatedTrack.id ? { ...t, ...updatedTrack } : t)),
+    );
+    setPlaylistTracks((prev) =>
       prev.map((t) => (t.id === updatedTrack.id ? { ...t, ...updatedTrack } : t)),
     );
   };
@@ -191,8 +329,77 @@ export default function App() {
 
       onTrackDeleted(track.id);
       setTracks((prev) => prev.filter((t) => t.id !== track.id));
+      setLikedTracks((prev) => prev.filter((t) => t.id !== track.id));
+      setPlaylistTracks((prev) => prev.filter((t) => t.id !== track.id));
     } catch (err: any) {
       alert(err.message || 'Error deleting track');
+    }
+  };
+
+  const handleOpenAddToPlaylist = (track: Track, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentUser) {
+      setIsAuthOpen(true);
+      return;
+    }
+    setTrackForPlaylist(track);
+    setIsAddToPlaylistOpen(true);
+  };
+
+  const handleSelectPlaylist = (playlist: any) => {
+    setSelectedPlaylist(playlist);
+    setCurrentTab('playlist');
+    fetchPlaylistDetails(playlist.id);
+  };
+
+  const handleDeletePlaylist = async () => {
+    if (!selectedPlaylist) return;
+    if (!window.confirm(`Are you sure you want to delete playlist "${selectedPlaylist.title}"?`)) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/playlists/${selectedPlaylist.id}`, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include',
+      });
+
+      if (res.ok) {
+        setPlaylists((prev) => prev.filter((p) => p.id !== selectedPlaylist.id));
+        setSelectedPlaylist(null);
+        setCurrentTab('home');
+      }
+    } catch (err) {
+      console.error('Failed to delete playlist:', err);
+    }
+  };
+
+  const handleRemoveTrackFromPlaylist = async (trackId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!selectedPlaylist) return;
+
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/playlists/${selectedPlaylist.id}/tracks/${trackId}`, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include',
+      });
+
+      if (res.ok) {
+        setPlaylistTracks((prev) => prev.filter((t) => t.id !== trackId));
+        fetchPlaylists();
+      }
+    } catch (err) {
+      console.error('Failed to remove track from playlist:', err);
     }
   };
 
@@ -201,14 +408,24 @@ export default function App() {
       {/* 1. Left Sidebar Navigation */}
       <Sidebar
         currentTab={currentTab}
-        onSelectTab={setCurrentTab}
-        onOpenUpload={() => {
-          if (!currentUser) {
+        onSelectTab={(tab) => {
+          if ((tab === 'liked' || tab === 'library') && !currentUser) {
             setIsAuthOpen(true);
-          } else {
-            setIsUploadOpen(true);
+            return;
           }
+          setCurrentTab(tab);
         }}
+        onOpenUpload={() => {
+          if (!currentUser) setIsAuthOpen(true);
+          else setIsUploadOpen(true);
+        }}
+        playlists={playlists}
+        onOpenCreatePlaylist={() => {
+          if (!currentUser) setIsAuthOpen(true);
+          else setIsCreatePlaylistOpen(true);
+        }}
+        onSelectPlaylist={handleSelectPlaylist}
+        selectedPlaylistId={selectedPlaylist?.id}
       />
 
       {/* 2. Main Content Viewport */}
@@ -257,216 +474,585 @@ export default function App() {
           </div>
         </header>
 
-        {/* Hero Banner */}
-        <section className="px-8 pt-6 pb-4">
-          <div className="relative overflow-hidden rounded-3xl p-8 bg-gradient-to-r from-denzo-surface via-denzo-card to-zinc-950 border border-denzo-border/70 shadow-2xl">
-            <div className="absolute right-0 top-0 bottom-0 w-96 bg-denzo-gradient opacity-10 blur-3xl pointer-events-none" />
+        {/* ----------------- TAB: HOME & DISCOVER ----------------- */}
+        {(currentTab === 'home' || currentTab === 'discover') && (
+          <>
+            {/* Hero Banner (Only on Home) */}
+            {currentTab === 'home' && (
+              <section className="px-8 pt-6 pb-4">
+                <div className="relative overflow-hidden rounded-3xl p-8 bg-gradient-to-r from-denzo-surface via-denzo-card to-zinc-950 border border-denzo-border/70 shadow-2xl">
+                  <div className="absolute right-0 top-0 bottom-0 w-96 bg-denzo-gradient opacity-10 blur-3xl pointer-events-none" />
 
-            <div className="relative z-10 max-w-xl">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-denzo-rose/10 border border-denzo-rose/30 text-denzo-rose text-xs font-semibold mb-3">
-                <Flame size={14} />
-                <span>Next-Gen Audio Experience</span>
-              </div>
-              <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight text-white mb-2 leading-tight">
-                Stream in Pure <span className="text-transparent bg-clip-text bg-denzo-gradient">Fidelity</span>
-              </h1>
-              <p className="text-sm text-denzo-muted mb-6 leading-relaxed">
-                Direct-to-S3 high-resolution audio streaming with interactive real-time waveforms and zero buffer lag.
-              </p>
+                  <div className="relative z-10 max-w-xl">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-denzo-rose/10 border border-denzo-rose/30 text-denzo-rose text-xs font-semibold mb-3">
+                      <Flame size={14} />
+                      <span>Next-Gen Audio Experience</span>
+                    </div>
+                    <h1 className="text-3xl lg:text-4xl font-extrabold tracking-tight text-white mb-2 leading-tight">
+                      Stream in Pure <span className="text-transparent bg-clip-text bg-denzo-gradient">Fidelity</span>
+                    </h1>
+                    <p className="text-sm text-denzo-muted mb-6 leading-relaxed">
+                      Direct-to-S3 high-resolution audio streaming with interactive real-time waveforms and zero buffer lag.
+                    </p>
 
-              {tracks.length > 0 && (
-                <button
-                  onClick={() => playTrack(tracks[0], tracks)}
-                  className="flex items-center gap-2.5 px-5 py-3 rounded-xl bg-denzo-gradient hover:bg-denzo-gradient-hover text-white font-semibold text-sm shadow-denzo-glow transition-all hover:scale-105 active:scale-95"
-                >
-                  <Play size={18} fill="currentColor" />
-                  <span>Play Featured Mix</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </section>
-
-        {/* Genre Pill Filters */}
-        <section className="px-8 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
-          {GENRES.map((genre) => (
-            <button
-              key={genre}
-              onClick={() => setSelectedGenre(genre)}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
-                selectedGenre === genre
-                  ? 'bg-denzo-gradient text-white shadow-denzo-glow-sm'
-                  : 'bg-denzo-surface border border-denzo-border/60 text-denzo-muted hover:text-white hover:border-zinc-700'
-              }`}
-            >
-              {genre}
-            </button>
-          ))}
-        </section>
-
-        {/* Tracks Feed Table */}
-        <section className="px-8 py-4 flex-1">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold text-white tracking-tight">Trending Tracks</h2>
-            <span className="text-xs text-denzo-muted font-medium">{tracks.length} tracks loaded</span>
-          </div>
-
-          {tracks.length === 0 && !isLoading ? (
-            <div className="py-20 flex flex-col items-center justify-center text-center border border-dashed border-denzo-border/70 rounded-2xl bg-denzo-surface/30">
-              <div className="w-14 h-14 rounded-2xl bg-denzo-card border border-denzo-border flex items-center justify-center text-denzo-muted mb-4">
-                <Music size={26} />
-              </div>
-              <h3 className="text-base font-bold text-white mb-1">No tracks found</h3>
-              <p className="text-xs text-denzo-muted max-w-sm mb-5">
-                Be the first to upload an audio track directly to the S3 bucket!
-              </p>
-              <button
-                onClick={() => {
-                  if (!currentUser) setIsAuthOpen(true);
-                  else setIsUploadOpen(true);
-                }}
-                className="px-4 py-2.5 rounded-xl bg-denzo-gradient text-white text-xs font-semibold shadow-denzo-glow transition-all hover:scale-105"
-              >
-                Upload First Track
-              </button>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1.5">
-              {tracks.map((track, idx) => {
-                const isThisPlaying = currentTrack?.id === track.id && isPlaying;
-                const isThisCurrent = currentTrack?.id === track.id;
-
-                return (
-                  <div
-                    key={track.id}
-                    onClick={() => {
-                      if (isThisCurrent) togglePlay();
-                      else playTrack(track, tracks);
-                    }}
-                    className={`group flex items-center justify-between px-4 py-3 rounded-xl transition-all cursor-pointer border ${
-                      isThisCurrent
-                        ? 'bg-denzo-card border-denzo-rose/40 shadow-sm'
-                        : 'bg-denzo-surface/40 hover:bg-denzo-card border-transparent hover:border-denzo-border/60'
-                    }`}
-                  >
-                    {/* Index & Title */}
-                    <div className="flex items-center gap-4 min-w-0 w-2/5">
-                      <div className="w-6 text-center text-xs font-mono text-denzo-muted group-hover:hidden flex justify-center">
-                        {isThisPlaying ? (
-                          <div className="flex items-end gap-0.5 h-3.5">
-                            <span className="w-1 h-3 bg-denzo-rose animate-bounce" />
-                            <span className="w-1 h-3.5 bg-denzo-pink animate-pulse" />
-                            <span className="w-1 h-2 bg-denzo-rose animate-bounce" />
-                          </div>
-                        ) : (
-                          idx + 1
-                        )}
-                      </div>
-
+                    {tracks.length > 0 && (
                       <button
-                        className="w-6 hidden group-hover:flex items-center justify-center text-white"
-                        title={isThisPlaying ? 'Pause' : 'Play'}
+                        onClick={() => playTrack(tracks[0], tracks)}
+                        className="flex items-center gap-2.5 px-5 py-3 rounded-xl bg-denzo-gradient hover:bg-denzo-gradient-hover text-white font-semibold text-sm shadow-denzo-glow transition-all hover:scale-105 active:scale-95"
                       >
-                        {isThisPlaying ? (
-                          <Pause size={15} fill="currentColor" />
-                        ) : (
-                          <Play size={15} fill="currentColor" />
-                        )}
+                        <Play size={18} fill="currentColor" />
+                        <span>Play Featured Mix</span>
                       </button>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
 
-                      <div className="relative w-11 h-11 rounded-lg bg-zinc-900 border border-denzo-border overflow-hidden flex-shrink-0">
-                        {track.coverImageUrl ? (
-                          <img
-                            src={track.coverImageUrl}
-                            alt={track.title}
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-zinc-600">
-                            <Music size={16} />
+            {/* Genre Pill Filters */}
+            <section className="px-8 py-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
+              {GENRES.map((genre) => (
+                <button
+                  key={genre}
+                  onClick={() => setSelectedGenre(genre)}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
+                    selectedGenre === genre
+                      ? 'bg-denzo-gradient text-white shadow-denzo-glow-sm'
+                      : 'bg-denzo-surface border border-denzo-border/60 text-denzo-muted hover:text-white hover:border-zinc-700'
+                  }`}
+                >
+                  {genre}
+                </button>
+              ))}
+            </section>
+
+            {/* Tracks Feed Table */}
+            <section className="px-8 py-4 flex-1">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-white tracking-tight">
+                  {currentTab === 'discover' ? 'Discover New Releases' : 'Trending Tracks'}
+                </h2>
+                <span className="text-xs text-denzo-muted font-medium">{tracks.length} tracks loaded</span>
+              </div>
+
+              {tracks.length === 0 && !isLoading ? (
+                <div className="py-20 flex flex-col items-center justify-center text-center border border-dashed border-denzo-border/70 rounded-2xl bg-denzo-surface/30">
+                  <div className="w-14 h-14 rounded-2xl bg-denzo-card border border-denzo-border flex items-center justify-center text-denzo-muted mb-4">
+                    <Music size={26} />
+                  </div>
+                  <h3 className="text-base font-bold text-white mb-1">No tracks found</h3>
+                  <p className="text-xs text-denzo-muted max-w-sm mb-5">
+                    Be the first to upload an audio track directly to the S3 bucket!
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (!currentUser) setIsAuthOpen(true);
+                      else setIsUploadOpen(true);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-denzo-gradient text-white text-xs font-semibold shadow-denzo-glow transition-all hover:scale-105"
+                  >
+                    Upload First Track
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {tracks.map((track, idx) => {
+                    const isThisPlaying = currentTrack?.id === track.id && isPlaying;
+                    const isThisCurrent = currentTrack?.id === track.id;
+
+                    return (
+                      <div
+                        key={track.id}
+                        onClick={() => {
+                          if (isThisCurrent) togglePlay();
+                          else playTrack(track, tracks);
+                        }}
+                        className={`group flex items-center justify-between px-4 py-3 rounded-xl transition-all cursor-pointer border ${
+                          isThisCurrent
+                            ? 'bg-denzo-card border-denzo-rose/40 shadow-sm'
+                            : 'bg-denzo-surface/40 hover:bg-denzo-card border-transparent hover:border-denzo-border/60'
+                        }`}
+                      >
+                        {/* Index & Title */}
+                        <div className="flex items-center gap-4 min-w-0 w-2/5">
+                          <div className="w-6 text-center text-xs font-mono text-denzo-muted group-hover:hidden flex justify-center">
+                            {isThisPlaying ? (
+                              <div className="flex items-end gap-0.5 h-3.5">
+                                <span className="w-1 h-3 bg-denzo-rose animate-bounce" />
+                                <span className="w-1 h-3.5 bg-denzo-pink animate-pulse" />
+                                <span className="w-1 h-2 bg-denzo-rose animate-bounce" />
+                              </div>
+                            ) : (
+                              idx + 1
+                            )}
                           </div>
-                        )}
-                      </div>
 
-                      <div className="flex flex-col min-w-0">
-                        <span
-                          className={`text-sm font-semibold truncate ${
-                            isThisCurrent ? 'text-denzo-rose' : 'text-white'
-                          }`}
-                        >
-                          {track.title}
-                        </span>
-                        <span className="text-xs text-denzo-muted truncate">
-                          {track.artist?.name || 'Unknown Artist'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Genre */}
-                    <div className="hidden md:flex items-center w-1/4">
-                      <span className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-denzo-border/60 text-[11px] text-zinc-400 font-medium">
-                        {track.genre || 'Electronic'}
-                      </span>
-                    </div>
-
-                    {/* Duration, Actions & Like */}
-                    <div className="flex items-center gap-2 md:gap-3">
-                      {/* Edit & Delete Buttons (Visible on hover if logged in) */}
-                      {currentUser && (
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
-                            onClick={(e) => handleOpenEdit(track, e)}
-                            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-                            title="Edit Track"
+                            className="w-6 hidden group-hover:flex items-center justify-center text-white"
+                            title={isThisPlaying ? 'Pause' : 'Play'}
                           >
-                            <Edit3 size={15} />
+                            {isThisPlaying ? (
+                              <Pause size={15} fill="currentColor" />
+                            ) : (
+                              <Play size={15} fill="currentColor" />
+                            )}
                           </button>
+
+                          <div className="relative w-11 h-11 rounded-lg bg-zinc-900 border border-denzo-border overflow-hidden flex-shrink-0">
+                            {track.coverImageUrl ? (
+                              <img
+                                src={track.coverImageUrl}
+                                alt={track.title}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                                <Music size={16} />
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex flex-col min-w-0">
+                            <span
+                              className={`text-sm font-semibold truncate ${
+                                isThisCurrent ? 'text-denzo-rose' : 'text-white'
+                              }`}
+                            >
+                              {track.title}
+                            </span>
+                            <span className="text-xs text-denzo-muted truncate">
+                              {track.artist?.name || 'Unknown Artist'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Genre */}
+                        <div className="hidden md:flex items-center w-1/4">
+                          <span className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-denzo-border/60 text-[11px] text-zinc-400 font-medium">
+                            {track.genre || 'Electronic'}
+                          </span>
+                        </div>
+
+                        {/* Actions, Duration & Like */}
+                        <div className="flex items-center gap-2 md:gap-3">
+                          {/* Hover action icons */}
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => handleOpenAddToPlaylist(track, e)}
+                              className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                              title="Add to Playlist"
+                            >
+                              <FolderPlus size={15} />
+                            </button>
+
+                            {currentUser && (currentUser.id === track.uploaderId || currentUser.role === 'ADMIN' || !track.uploaderId) && (
+                              <>
+                                <button
+                                  onClick={(e) => handleOpenEdit(track, e)}
+                                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                                  title="Edit Track"
+                                >
+                                  <Edit3 size={15} />
+                                </button>
+                                <button
+                                  onClick={(e) => handleDeleteTrack(track, e)}
+                                  className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-colors"
+                                  title="Delete Track"
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </>
+                            )}
+                          </div>
+
                           <button
-                            onClick={(e) => handleDeleteTrack(track, e)}
-                            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-colors"
-                            title="Delete Track"
+                            onClick={(e) => handleToggleLike(track, e)}
+                            className={`p-1.5 rounded-full transition-colors ${
+                              track.isLiked
+                                ? 'text-denzo-rose'
+                                : 'text-zinc-600 hover:text-white'
+                            }`}
+                            title={track.isLiked ? 'Unlike' : 'Like'}
+                          >
+                            <Heart size={16} fill={track.isLiked ? 'currentColor' : 'none'} />
+                          </button>
+
+                          <div className="flex items-center gap-1.5 text-xs font-mono text-denzo-muted w-14 justify-end">
+                            <Clock size={12} className="opacity-60" />
+                            <span>{formatDuration(track.duration)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Load More Button for Cursor Pagination */}
+              {nextCursor && (
+                <div className="pt-6 flex justify-center">
+                  <button
+                    onClick={() => fetchTracks(nextCursor, true)}
+                    disabled={isLoading}
+                    className="px-6 py-2.5 rounded-xl bg-denzo-surface hover:bg-denzo-card border border-denzo-border text-xs font-semibold text-white transition-all hover:border-denzo-rose/50"
+                  >
+                    {isLoading ? 'Loading more...' : 'Load More Tracks'}
+                  </button>
+                </div>
+              )}
+            </section>
+          </>
+        )}
+
+        {/* ----------------- TAB: LIKED SONGS ----------------- */}
+        {currentTab === 'liked' && (
+          <section className="px-8 py-6 flex-1 flex flex-col">
+            {/* Liked Header Banner */}
+            <div className="relative overflow-hidden rounded-3xl p-8 bg-gradient-to-r from-rose-950/60 via-denzo-card to-zinc-950 border border-denzo-border/70 shadow-2xl mb-6">
+              <div className="flex flex-col md:flex-row items-start md:items-center gap-6 relative z-10">
+                <div className="w-24 h-24 rounded-2xl bg-denzo-gradient flex items-center justify-center shadow-denzo-glow flex-shrink-0">
+                  <Heart size={44} className="text-white" fill="white" />
+                </div>
+                <div className="flex-1">
+                  <span className="text-xs uppercase font-bold tracking-wider text-denzo-rose">Playlist</span>
+                  <h1 className="text-3xl lg:text-4xl font-extrabold text-white mt-1 mb-2">Liked Songs</h1>
+                  <p className="text-xs text-denzo-muted">
+                    {currentUser?.username || 'You'} • {likedTracks.length} tracks
+                  </p>
+                </div>
+                {likedTracks.length > 0 && (
+                  <button
+                    onClick={() => playTrack(likedTracks[0], likedTracks)}
+                    className="flex items-center gap-2.5 px-6 py-3.5 rounded-xl bg-denzo-gradient hover:bg-denzo-gradient-hover text-white font-semibold text-sm shadow-denzo-glow transition-all hover:scale-105 active:scale-95"
+                  >
+                    <Play size={18} fill="currentColor" />
+                    <span>Play All</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Liked Tracks List */}
+            {likedTracks.length === 0 ? (
+              <div className="py-20 flex flex-col items-center justify-center text-center border border-dashed border-denzo-border/70 rounded-2xl bg-denzo-surface/30">
+                <Heart size={36} className="text-zinc-600 mb-3" />
+                <h3 className="text-base font-bold text-white mb-1">Songs you like will appear here</h3>
+                <p className="text-xs text-denzo-muted max-w-sm mb-4">
+                  Save tracks by clicking the heart icon while listening.
+                </p>
+                <button
+                  onClick={() => setCurrentTab('home')}
+                  className="px-4 py-2 rounded-xl bg-denzo-surface hover:bg-denzo-card border border-denzo-border text-xs text-white"
+                >
+                  Explore Home Feed
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {likedTracks.map((track, idx) => {
+                  const isThisPlaying = currentTrack?.id === track.id && isPlaying;
+                  const isThisCurrent = currentTrack?.id === track.id;
+
+                  return (
+                    <div
+                      key={track.id}
+                      onClick={() => {
+                        if (isThisCurrent) togglePlay();
+                        else playTrack(track, likedTracks);
+                      }}
+                      className={`group flex items-center justify-between px-4 py-3 rounded-xl transition-all cursor-pointer border ${
+                        isThisCurrent
+                          ? 'bg-denzo-card border-denzo-rose/40 shadow-sm'
+                          : 'bg-denzo-surface/40 hover:bg-denzo-card border-transparent hover:border-denzo-border/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4 min-w-0 w-2/5">
+                        <div className="w-6 text-center text-xs font-mono text-denzo-muted group-hover:hidden flex justify-center">
+                          {isThisPlaying ? (
+                            <div className="flex items-end gap-0.5 h-3.5">
+                              <span className="w-1 h-3 bg-denzo-rose animate-bounce" />
+                              <span className="w-1 h-3.5 bg-denzo-pink animate-pulse" />
+                              <span className="w-1 h-2 bg-denzo-rose animate-bounce" />
+                            </div>
+                          ) : (
+                            idx + 1
+                          )}
+                        </div>
+
+                        <button className="w-6 hidden group-hover:flex items-center justify-center text-white">
+                          {isThisPlaying ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+                        </button>
+
+                        <div className="relative w-11 h-11 rounded-lg bg-zinc-900 border border-denzo-border overflow-hidden flex-shrink-0">
+                          {track.coverImageUrl ? (
+                            <img src={track.coverImageUrl} alt={track.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                              <Music size={16} />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-sm font-semibold truncate ${isThisCurrent ? 'text-denzo-rose' : 'text-white'}`}>
+                            {track.title}
+                          </span>
+                          <span className="text-xs text-denzo-muted truncate">{track.artist?.name || 'Unknown Artist'}</span>
+                        </div>
+                      </div>
+
+                      <div className="hidden md:flex items-center w-1/4">
+                        <span className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-denzo-border/60 text-[11px] text-zinc-400 font-medium">
+                          {track.genre || 'Electronic'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 md:gap-3">
+                        <button
+                          onClick={(e) => handleOpenAddToPlaylist(track, e)}
+                          className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors opacity-0 group-hover:opacity-100"
+                          title="Add to Playlist"
+                        >
+                          <FolderPlus size={15} />
+                        </button>
+
+                        <button
+                          onClick={(e) => handleToggleLike(track, e)}
+                          className="p-1.5 rounded-full text-denzo-rose hover:scale-110 transition-transform"
+                          title="Remove from Liked"
+                        >
+                          <Heart size={16} fill="currentColor" />
+                        </button>
+
+                        <div className="flex items-center gap-1.5 text-xs font-mono text-denzo-muted w-14 justify-end">
+                          <Clock size={12} className="opacity-60" />
+                          <span>{formatDuration(track.duration)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* ----------------- TAB: PLAYLIST VIEW ----------------- */}
+        {currentTab === 'playlist' && selectedPlaylist && (
+          <section className="px-8 py-6 flex-1 flex flex-col">
+            {/* Playlist Header */}
+            <div className="relative overflow-hidden rounded-3xl p-8 bg-gradient-to-r from-denzo-surface via-denzo-card to-zinc-950 border border-denzo-border/70 shadow-2xl mb-6">
+              <div className="flex flex-col md:flex-row items-start md:items-center gap-6 relative z-10">
+                <div className="w-28 h-28 rounded-2xl bg-zinc-900 border border-denzo-border overflow-hidden flex items-center justify-center flex-shrink-0 shadow-lg">
+                  {selectedPlaylist.coverImageUrl ? (
+                    <img src={selectedPlaylist.coverImageUrl} alt={selectedPlaylist.title} className="w-full h-full object-cover" />
+                  ) : (
+                    <ListMusic size={40} className="text-zinc-600" />
+                  )}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs uppercase font-bold tracking-wider text-denzo-rose">Playlist</span>
+                  <h1 className="text-3xl lg:text-4xl font-extrabold text-white mt-1 mb-1 truncate">
+                    {selectedPlaylist.title}
+                  </h1>
+                  {selectedPlaylist.description && (
+                    <p className="text-xs text-denzo-muted mb-2 max-w-xl">{selectedPlaylist.description}</p>
+                  )}
+                  <p className="text-xs text-zinc-400">
+                    Created by {selectedPlaylist.owner?.username || 'You'} • {playlistTracks.length} tracks • {formatDuration(selectedPlaylist.totalDuration || 0)}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  {playlistTracks.length > 0 && (
+                    <button
+                      onClick={() => playTrack(playlistTracks[0], playlistTracks)}
+                      className="flex items-center gap-2 px-5 py-3 rounded-xl bg-denzo-gradient hover:bg-denzo-gradient-hover text-white font-semibold text-xs shadow-denzo-glow transition-all hover:scale-105 active:scale-95"
+                    >
+                      <Play size={16} fill="currentColor" />
+                      <span>Play All</span>
+                    </button>
+                  )}
+
+                  {currentUser?.id === selectedPlaylist.ownerId && (
+                    <button
+                      onClick={handleDeletePlaylist}
+                      className="p-3 rounded-xl bg-denzo-surface border border-denzo-border text-zinc-400 hover:text-rose-400 hover:border-rose-500/50 transition-colors"
+                      title="Delete Playlist"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Playlist Tracks List */}
+            {playlistTracks.length === 0 ? (
+              <div className="py-20 flex flex-col items-center justify-center text-center border border-dashed border-denzo-border/70 rounded-2xl bg-denzo-surface/30">
+                <ListMusic size={36} className="text-zinc-600 mb-3" />
+                <h3 className="text-base font-bold text-white mb-1">This playlist is empty</h3>
+                <p className="text-xs text-denzo-muted max-w-sm mb-4">
+                  Add tracks to this playlist by clicking the folder icon on any song.
+                </p>
+                <button
+                  onClick={() => setCurrentTab('home')}
+                  className="px-4 py-2 rounded-xl bg-denzo-surface hover:bg-denzo-card border border-denzo-border text-xs text-white"
+                >
+                  Browse Tracks
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1.5">
+                {playlistTracks.map((track, idx) => {
+                  const isThisPlaying = currentTrack?.id === track.id && isPlaying;
+                  const isThisCurrent = currentTrack?.id === track.id;
+
+                  return (
+                    <div
+                      key={track.id}
+                      onClick={() => {
+                        if (isThisCurrent) togglePlay();
+                        else playTrack(track, playlistTracks);
+                      }}
+                      className={`group flex items-center justify-between px-4 py-3 rounded-xl transition-all cursor-pointer border ${
+                        isThisCurrent
+                          ? 'bg-denzo-card border-denzo-rose/40 shadow-sm'
+                          : 'bg-denzo-surface/40 hover:bg-denzo-card border-transparent hover:border-denzo-border/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-4 min-w-0 w-2/5">
+                        <div className="w-6 text-center text-xs font-mono text-denzo-muted group-hover:hidden flex justify-center">
+                          {isThisPlaying ? (
+                            <div className="flex items-end gap-0.5 h-3.5">
+                              <span className="w-1 h-3 bg-denzo-rose animate-bounce" />
+                              <span className="w-1 h-3.5 bg-denzo-pink animate-pulse" />
+                              <span className="w-1 h-2 bg-denzo-rose animate-bounce" />
+                            </div>
+                          ) : (
+                            idx + 1
+                          )}
+                        </div>
+
+                        <button className="w-6 hidden group-hover:flex items-center justify-center text-white">
+                          {isThisPlaying ? <Pause size={15} fill="currentColor" /> : <Play size={15} fill="currentColor" />}
+                        </button>
+
+                        <div className="relative w-11 h-11 rounded-lg bg-zinc-900 border border-denzo-border overflow-hidden flex-shrink-0">
+                          {track.coverImageUrl ? (
+                            <img src={track.coverImageUrl} alt={track.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-zinc-600">
+                              <Music size={16} />
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-col min-w-0">
+                          <span className={`text-sm font-semibold truncate ${isThisCurrent ? 'text-denzo-rose' : 'text-white'}`}>
+                            {track.title}
+                          </span>
+                          <span className="text-xs text-denzo-muted truncate">{track.artist?.name || 'Unknown Artist'}</span>
+                        </div>
+                      </div>
+
+                      <div className="hidden md:flex items-center w-1/4">
+                        <span className="px-2.5 py-1 rounded-lg bg-zinc-900 border border-denzo-border/60 text-[11px] text-zinc-400 font-medium">
+                          {track.genre || 'Electronic'}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 md:gap-3">
+                        {currentUser?.id === selectedPlaylist.ownerId && (
+                          <button
+                            onClick={(e) => handleRemoveTrackFromPlaylist(track.id, e)}
+                            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Remove from playlist"
                           >
                             <Trash2 size={15} />
                           </button>
+                        )}
+
+                        <button
+                          onClick={(e) => handleToggleLike(track, e)}
+                          className={`p-1.5 rounded-full transition-colors ${
+                            track.isLiked ? 'text-denzo-rose' : 'text-zinc-600 hover:text-white'
+                          }`}
+                          title={track.isLiked ? 'Unlike' : 'Like'}
+                        >
+                          <Heart size={16} fill={track.isLiked ? 'currentColor' : 'none'} />
+                        </button>
+
+                        <div className="flex items-center gap-1.5 text-xs font-mono text-denzo-muted w-14 justify-end">
+                          <Clock size={12} className="opacity-60" />
+                          <span>{formatDuration(track.duration)}</span>
                         </div>
-                      )}
-
-                      <button
-                        onClick={(e) => handleToggleLike(track, e)}
-                        className={`p-1.5 rounded-full transition-colors ${
-                          track.isLiked
-                            ? 'text-denzo-rose'
-                            : 'text-zinc-600 hover:text-white'
-                        }`}
-                        title={track.isLiked ? 'Unlike' : 'Like'}
-                      >
-                        <Heart size={16} fill={track.isLiked ? 'currentColor' : 'none'} />
-                      </button>
-
-                      <div className="flex items-center gap-1.5 text-xs font-mono text-denzo-muted w-14 justify-end">
-                        <Clock size={12} className="opacity-60" />
-                        <span>{formatDuration(track.duration)}</span>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
 
-          {/* Load More Button for Cursor Pagination */}
-          {nextCursor && (
-            <div className="pt-6 flex justify-center">
+        {/* ----------------- TAB: LIBRARY VIEW ----------------- */}
+        {currentTab === 'library' && (
+          <section className="px-8 py-6 flex-1 flex flex-col">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h1 className="text-2xl font-bold text-white tracking-tight">Your Library</h1>
+                <p className="text-xs text-denzo-muted mt-0.5">Manage your playlists and saved tracks</p>
+              </div>
               <button
-                onClick={() => fetchTracks(nextCursor, true)}
-                disabled={isLoading}
-                className="px-6 py-2.5 rounded-xl bg-denzo-surface hover:bg-denzo-card border border-denzo-border text-xs font-semibold text-white transition-all hover:border-denzo-rose/50"
+                onClick={() => {
+                  if (!currentUser) setIsAuthOpen(true);
+                  else setIsCreatePlaylistOpen(true);
+                }}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-denzo-gradient hover:bg-denzo-gradient-hover text-white text-xs font-semibold shadow-denzo-glow-sm transition-all"
               >
-                {isLoading ? 'Loading more...' : 'Load More Tracks'}
+                <Plus size={16} />
+                <span>New Playlist</span>
               </button>
             </div>
-          )}
-        </section>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {/* Liked Songs shortcut card */}
+              <div
+                onClick={() => setCurrentTab('liked')}
+                className="group relative rounded-2xl p-5 bg-gradient-to-br from-denzo-rose/20 via-denzo-card to-zinc-950 border border-denzo-rose/30 hover:border-denzo-rose/60 transition-all cursor-pointer shadow-lg hover:scale-[1.02]"
+              >
+                <div className="w-12 h-12 rounded-xl bg-denzo-gradient flex items-center justify-center text-white shadow-denzo-glow mb-4">
+                  <Heart size={24} fill="currentColor" />
+                </div>
+                <h3 className="text-sm font-bold text-white mb-1">Liked Songs</h3>
+                <p className="text-xs text-denzo-muted">{likedTracks.length} tracks</p>
+              </div>
+
+              {/* User playlists */}
+              {playlists.map((pl) => (
+                <div
+                  key={pl.id}
+                  onClick={() => handleSelectPlaylist(pl)}
+                  className="group relative rounded-2xl p-4 bg-denzo-surface/60 hover:bg-denzo-card border border-denzo-border/60 hover:border-denzo-rose/40 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+                >
+                  <div className="w-full aspect-square rounded-xl bg-zinc-900 border border-denzo-border overflow-hidden flex items-center justify-center text-zinc-600 mb-3">
+                    {pl.coverImageUrl ? (
+                      <img src={pl.coverImageUrl} alt={pl.title} className="w-full h-full object-cover" />
+                    ) : (
+                      <ListMusic size={32} />
+                    )}
+                  </div>
+                  <h3 className="text-sm font-bold text-white truncate mb-0.5">{pl.title}</h3>
+                  <p className="text-xs text-denzo-muted">
+                    {pl._count?.tracks ?? pl.trackCount ?? 0} tracks
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </main>
 
       {/* 3. Sticky Bottom Persistent Audio Player */}
@@ -490,7 +1076,30 @@ export default function App() {
         onSuccess={handleEditSuccess}
       />
 
-      {/* 6. Auth Modal (Login / Register) */}
+      {/* 6. Create Playlist Modal */}
+      <CreatePlaylistModal
+        isOpen={isCreatePlaylistOpen}
+        onClose={() => setIsCreatePlaylistOpen(false)}
+        onSuccess={(newPlaylist) => {
+          setPlaylists((prev) => [newPlaylist, ...prev]);
+          handleSelectPlaylist(newPlaylist);
+        }}
+      />
+
+      {/* 7. Add to Playlist Modal */}
+      <AddToPlaylistModal
+        isOpen={isAddToPlaylistOpen}
+        onClose={() => {
+          setIsAddToPlaylistOpen(false);
+          setTrackForPlaylist(null);
+        }}
+        track={trackForPlaylist}
+        playlists={playlists}
+        onOpenCreatePlaylist={() => setIsCreatePlaylistOpen(true)}
+        onTrackAdded={() => fetchPlaylists()}
+      />
+
+      {/* 8. Auth Modal (Login / Register) */}
       {isAuthOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-denzo-surface border border-denzo-border/80 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">

@@ -1,0 +1,18 @@
+{
+  "name": "denzo-music",
+  "version": "1.0.0",
+  "description": "Denzo Music - High-performance Audio Streaming Web Application",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"magenta.bold,cyan.bold\" \"npm run start:dev --prefix server\" \"npm run dev --prefix client\"",
+    "dev:server": "npm run start:dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm run build --prefix server && npm run build --prefix client",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

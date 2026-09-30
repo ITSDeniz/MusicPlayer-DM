@@ -175,6 +175,80 @@ export class TrackService {
   }
 
   /**
+   * Retrieves tracks liked by the user.
+   */
+  async getLikedTracks(userId: string, dto: QueryTracksDto): Promise<PaginatedTracksResult> {
+    const limit = dto.limit ?? 20;
+    const where: Prisma.TrackWhereInput = {
+      likes: {
+        some: {
+          userId,
+        },
+      },
+    };
+
+    if (dto.search) {
+      const search = dto.search.trim();
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { artist: { name: { contains: search, mode: 'insensitive' } } },
+        { genre: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    const tracks = await this.prisma.track.findMany({
+      where,
+      take: limit + 1,
+      cursor: dto.cursor ? { id: dto.cursor } : undefined,
+      skip: dto.cursor ? 1 : 0,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      include: {
+        artist: {
+          select: { id: true, name: true, avatarUrl: true },
+        },
+      },
+    });
+
+    const hasMore = tracks.length > limit;
+    const items = hasMore ? tracks.slice(0, limit) : tracks;
+    const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+    const tracksWithUrls = await Promise.all(
+      items.map(async (t) => {
+        let streamUrl: string;
+        try {
+          streamUrl = await this.storageService.getStreamPresignedUrl(t.audioStorageKey);
+        } catch {
+          streamUrl = '';
+        }
+
+        return {
+          id: t.id,
+          title: t.title,
+          duration: t.duration,
+          audioFormat: t.audioFormat,
+          coverImageUrl: t.coverImageUrl,
+          genre: t.genre,
+          playCount: t.playCount.toString(),
+          isExplicit: t.isExplicit,
+          waveformData: t.waveformData,
+          createdAt: t.createdAt,
+          artist: t.artist,
+          streamUrl,
+          isLiked: true,
+          uploaderId: t.uploaderId,
+        };
+      }),
+    );
+
+    return {
+      items: tracksWithUrls,
+      nextCursor,
+      hasMore,
+    };
+  }
+
+  /**
    * Updates track metadata (title, artist, genre, coverImageUrl).
    * Only the track's uploader or an ADMIN can perform updates.
    */

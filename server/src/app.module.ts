@@ -5,6 +5,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { StorageModule } from './storage/storage.module';
 import { AuthModule } from './auth/auth.module';
 import { TrackModule } from './track/track.module';
+import { PlaylistModule } from './playlist/playlist.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { TrackModule } from './track/track.module';
     StorageModule,
     AuthModule,
     TrackModule,
+    PlaylistModule,
   ],
 })
 export class AppModule {}
