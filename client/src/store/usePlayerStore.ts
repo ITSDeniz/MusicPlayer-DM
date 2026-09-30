@@ -17,6 +17,7 @@ export interface Track {
   };
   isLiked?: boolean;
   uploaderId?: string;
+  audioFormat?: string | null;
 }
 
 export type RepeatMode = 'off' | 'all' | 'one';
