@@ -8,10 +8,13 @@ import {
   Music,
   LogOut,
   Flame,
+  Edit3,
+  Trash2,
 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { BottomPlayer } from './components/BottomPlayer';
 import { UploadModal } from './components/UploadModal';
+import { EditModal } from './components/EditModal';
 import { usePlayerStore, Track } from './store/usePlayerStore';
 
 function formatDuration(seconds: number): string {
@@ -28,6 +31,8 @@ export default function App() {
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingTrack, setEditingTrack] = useState<Track | null>(null);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const [authEmail, setAuthEmail] = useState('');
@@ -40,7 +45,15 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
 
-  const { currentTrack, isPlaying, playTrack, togglePlay, setLikeStatus } = usePlayerStore();
+  const {
+    currentTrack,
+    isPlaying,
+    playTrack,
+    togglePlay,
+    setLikeStatus,
+    onTrackDeleted,
+    updateTrackData,
+  } = usePlayerStore();
 
   // Check current session
   useEffect(() => {
@@ -129,6 +142,57 @@ export default function App() {
       await fetch(`/api/tracks/${track.id}/like`, { method: 'POST' });
     } catch {
       setLikeStatus(track.id, !newStatus);
+    }
+  };
+
+  const handleOpenEdit = (track: Track, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentUser) {
+      setIsAuthOpen(true);
+      return;
+    }
+    setEditingTrack(track);
+    setIsEditOpen(true);
+  };
+
+  const handleEditSuccess = (updatedTrack: Track) => {
+    updateTrackData(updatedTrack);
+    setTracks((prev) =>
+      prev.map((t) => (t.id === updatedTrack.id ? { ...t, ...updatedTrack } : t)),
+    );
+  };
+
+  const handleDeleteTrack = async (track: Track, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!currentUser) {
+      setIsAuthOpen(true);
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to delete "${track.title}"?`)) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('accessToken');
+      const headers: Record<string, string> = {};
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch(`/api/tracks/${track.id}`, {
+        method: 'DELETE',
+        headers,
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || 'Failed to delete track');
+      }
+
+      onTrackDeleted(track.id);
+      setTracks((prev) => prev.filter((t) => t.id !== track.id));
+    } catch (err: any) {
+      alert(err.message || 'Error deleting track');
     }
   };
 
@@ -345,8 +409,28 @@ export default function App() {
                       </span>
                     </div>
 
-                    {/* Duration & Like */}
-                    <div className="flex items-center gap-4">
+                    {/* Duration, Actions & Like */}
+                    <div className="flex items-center gap-2 md:gap-3">
+                      {/* Edit & Delete Buttons (Visible on hover if logged in) */}
+                      {currentUser && (
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={(e) => handleOpenEdit(track, e)}
+                            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                            title="Edit Track"
+                          >
+                            <Edit3 size={15} />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteTrack(track, e)}
+                            className="p-1.5 rounded-lg text-zinc-400 hover:text-rose-400 hover:bg-zinc-800 transition-colors"
+                            title="Delete Track"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      )}
+
                       <button
                         onClick={(e) => handleToggleLike(track, e)}
                         className={`p-1.5 rounded-full transition-colors ${
@@ -395,7 +479,18 @@ export default function App() {
         onUploadSuccess={() => fetchTracks()}
       />
 
-      {/* 5. Auth Modal (Login / Register) */}
+      {/* 5. Edit Track Modal */}
+      <EditModal
+        isOpen={isEditOpen}
+        onClose={() => {
+          setIsEditOpen(false);
+          setEditingTrack(null);
+        }}
+        track={editingTrack}
+        onSuccess={handleEditSuccess}
+      />
+
+      {/* 6. Auth Modal (Login / Register) */}
       {isAuthOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-denzo-surface border border-denzo-border/80 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">

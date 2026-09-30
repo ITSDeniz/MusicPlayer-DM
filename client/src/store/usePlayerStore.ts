@@ -16,6 +16,7 @@ export interface Track {
     avatarUrl?: string | null;
   };
   isLiked?: boolean;
+  uploaderId?: string;
 }
 
 export type RepeatMode = 'off' | 'all' | 'one';
@@ -49,6 +50,8 @@ interface PlayerState {
   removeFromQueue: (trackId: string) => void;
   clearQueue: () => void;
   setLikeStatus: (trackId: string, isLiked: boolean) => void;
+  onTrackDeleted: (trackId: string) => void;
+  updateTrackData: (updatedTrack: Partial<Track> & { id: string }) => void;
 }
 
 // Global Singleton HTMLAudioElement instance ensuring audio plays seamlessly across routes
@@ -245,6 +248,30 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         return {
           currentTrack: state.currentTrack?.id === trackId ? { ...state.currentTrack, isLiked } : state.currentTrack,
           queue: state.queue.map(updateTrack),
+        };
+      });
+    },
+
+    onTrackDeleted: (trackId: string) => {
+      const { currentTrack, queue } = get();
+      if (currentTrack?.id === trackId) {
+        audio.pause();
+        audio.src = '';
+        set({ currentTrack: null, isPlaying: false, currentTime: 0, duration: 0 });
+      }
+      set({
+        queue: queue.filter((t) => t.id !== trackId),
+      });
+    },
+
+    updateTrackData: (updatedTrack: Partial<Track> & { id: string }) => {
+      set((state) => {
+        const update = (t: Track) => (t.id === updatedTrack.id ? { ...t, ...updatedTrack } : t);
+        return {
+          currentTrack: state.currentTrack?.id === updatedTrack.id
+            ? { ...state.currentTrack, ...updatedTrack }
+            : state.currentTrack,
+          queue: state.queue.map(update),
         };
       });
     },

@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -13,6 +15,7 @@ import { TrackService } from './track.service';
 import { RequestUploadUrlDto } from './dto/request-upload-url.dto';
 import { CreateTrackDto } from './dto/create-track.dto';
 import { QueryTracksDto } from './dto/query-tracks.dto';
+import { UpdateTrackDto } from './dto/update-track.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 interface AuthenticatedRequest extends Request {
@@ -54,6 +57,25 @@ export class TrackController {
   @Get(':id')
   getTrackById(@Param('id') id: string) {
     return this.trackService.getTrackById(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch(':id')
+  updateTrack(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateTrackDto,
+  ) {
+    return this.trackService.updateTrack(req.user.id, id, dto, req.user.role);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  deleteTrack(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.trackService.deleteTrack(req.user.id, id, req.user.role);
   }
 
   @UseGuards(JwtAuthGuard)

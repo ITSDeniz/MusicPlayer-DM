@@ -1,6 +1,7 @@
 import {
   Injectable,
   NotFoundException,
+  ForbiddenException,
   InternalServerErrorException,
   Logger,
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { StorageService } from '../storage/storage.service';
 import { RequestUploadUrlDto } from './dto/request-upload-url.dto';
 import { CreateTrackDto } from './dto/create-track.dto';
 import { QueryTracksDto } from './dto/query-tracks.dto';
+import { UpdateTrackDto } from './dto/update-track.dto';
 
 export interface PaginatedTracksResult {
   items: any[];
@@ -160,6 +162,7 @@ export class TrackService {
           artist: t.artist,
           streamUrl,
           isLiked,
+          uploaderId: t.uploaderId,
         };
       }),
     );
@@ -169,6 +172,98 @@ export class TrackService {
       nextCursor,
       hasMore,
     };
+  }
+
+  /**
+   * Updates track metadata (title, artist, genre, coverImageUrl).
+   * Only the track's uploader or an ADMIN can perform updates.
+   */
+  async updateTrack(userId: string, trackId: string, dto: UpdateTrackDto, userRole?: string) {
+    const track = await this.prisma.track.findUnique({
+      where: { id: trackId },
+      include: { artist: true },
+    });
+
+    if (!track) {
+      throw new NotFoundException('Track not found');
+    }
+
+    if (track.uploaderId !== userId && userRole !== 'ADMIN') {
+      throw new ForbiddenException('You can only edit your own tracks');
+    }
+
+    let artistId = track.artistId;
+    if (dto.artistName && dto.artistName.trim() !== track.artist?.name) {
+      let artist = await this.prisma.artist.findFirst({
+        where: { name: { equals: dto.artistName.trim(), mode: 'insensitive' } },
+      });
+
+      if (!artist) {
+        artist = await this.prisma.artist.create({
+          data: { name: dto.artistName.trim() },
+        });
+      }
+      artistId = artist.id;
+    }
+
+    const updated = await this.prisma.track.update({
+      where: { id: trackId },
+      data: {
+        ...(dto.title ? { title: dto.title.trim() } : {}),
+        ...(dto.genre !== undefined ? { genre: dto.genre?.trim() } : {}),
+        ...(dto.coverImageUrl !== undefined ? { coverImageUrl: dto.coverImageUrl } : {}),
+        artistId,
+      },
+      include: {
+        artist: true,
+      },
+    });
+
+    let streamUrl: string;
+    try {
+      streamUrl = await this.storageService.getStreamPresignedUrl(updated.audioStorageKey);
+    } catch {
+      streamUrl = '';
+    }
+
+    return {
+      ...updated,
+      fileSize: updated.fileSize.toString(),
+      playCount: updated.playCount.toString(),
+      streamUrl,
+      uploaderId: updated.uploaderId,
+    };
+  }
+
+  /**
+   * Deletes a track record and cleans up the associated S3 audio file.
+   * Only the track's uploader or an ADMIN can delete the track.
+   */
+  async deleteTrack(userId: string, trackId: string, userRole?: string) {
+    const track = await this.prisma.track.findUnique({
+      where: { id: trackId },
+    });
+
+    if (!track) {
+      throw new NotFoundException('Track not found');
+    }
+
+    if (track.uploaderId !== userId && userRole !== 'ADMIN') {
+      throw new ForbiddenException('You can only delete your own tracks');
+    }
+
+    // Clean up S3 audio file
+    try {
+      await this.storageService.deleteFile(track.audioStorageKey);
+    } catch (err: any) {
+      this.logger.warn(`Failed to delete S3 file ${track.audioStorageKey}: ${err?.message}`);
+    }
+
+    await this.prisma.track.delete({
+      where: { id: trackId },
+    });
+
+    return { success: true, message: 'Track deleted successfully' };
   }
 
   /**
