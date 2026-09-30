@@ -13,6 +13,7 @@ import {
   FolderPlus,
   Plus,
   ListMusic,
+  X,
 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { BottomPlayer } from './components/BottomPlayer';
@@ -79,6 +80,20 @@ export default function App() {
       .then((user) => setCurrentUser(user))
       .catch(() => {});
   }, []);
+
+  // Close modals on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (isAuthOpen) {
+          setIsAuthOpen(false);
+          setAuthError('');
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAuthOpen]);
 
   // Fetch user's playlists
   const fetchPlaylists = useCallback(async () => {
@@ -1101,9 +1116,30 @@ export default function App() {
 
       {/* 8. Auth Modal (Login / Register) */}
       {isAuthOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-denzo-surface border border-denzo-border/80 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative">
-            <h2 className="text-xl font-bold text-white mb-1">
+        <div
+          onClick={() => {
+            setIsAuthOpen(false);
+            setAuthError('');
+          }}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-denzo-surface border border-denzo-border/80 w-full max-w-sm rounded-2xl p-6 shadow-2xl relative animate-scaleUp"
+          >
+            {/* Close Button */}
+            <button
+              onClick={() => {
+                setIsAuthOpen(false);
+                setAuthError('');
+              }}
+              className="absolute top-5 right-5 w-8 h-8 rounded-lg flex items-center justify-center text-denzo-muted hover:text-white hover:bg-zinc-800 transition-colors"
+              title="Close"
+            >
+              <X size={18} />
+            </button>
+
+            <h2 className="text-xl font-bold text-white mb-1 pr-8">
               {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
             </h2>
             <p className="text-xs text-denzo-muted mb-5">
