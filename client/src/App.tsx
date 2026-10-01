@@ -15,6 +15,7 @@ import {
   X,
   TrendingUp,
   History,
+  Menu,
 } from 'lucide-react';
 import { Sidebar } from './components/Sidebar';
 import { BottomPlayer } from './components/BottomPlayer';
@@ -22,6 +23,8 @@ import { UploadModal } from './components/UploadModal';
 import { EditModal } from './components/EditModal';
 import { CreatePlaylistModal } from './components/CreatePlaylistModal';
 import { AddToPlaylistModal } from './components/AddToPlaylistModal';
+import { ToastContainer } from './components/ToastContainer';
+import { toast } from './store/useToastStore';
 import { usePlayerStore, Track } from './store/usePlayerStore';
 
 function formatDuration(seconds: number): string {
@@ -38,7 +41,8 @@ export default function App() {
   const [selectedGenre, setSelectedGenre] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Modals state
+  // Modals & Navigation state
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingTrack, setEditingTrack] = useState<Track | null>(null);
@@ -288,8 +292,14 @@ export default function App() {
       setAuthPassword('');
       fetchTracks();
       fetchPlaylists();
+      toast.success(
+        authMode === 'login'
+          ? `Welcome back, ${data.user.username}!`
+          : `Account created! Welcome, ${data.user.username}!`,
+      );
     } catch (err: any) {
       setAuthError(err.message || 'An error occurred during authentication.');
+      toast.error(err.message || 'Authentication failed');
     }
   };
 
@@ -302,10 +312,11 @@ export default function App() {
     if (currentTab === 'liked' || currentTab === 'library' || currentTab === 'playlist') {
       setCurrentTab('home');
     }
+    toast.info('Signed out successfully');
   };
 
-  const handleToggleLike = async (track: Track, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleToggleLike = async (track: Track, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     if (!currentUser) {
       setIsAuthOpen(true);
       return;
@@ -324,6 +335,8 @@ export default function App() {
     setPlaylistTracks((prev) =>
       prev.map((t) => (t.id === track.id ? { ...t, isLiked: newStatus } : t)),
     );
+
+    toast.success(newStatus ? 'Added to Liked Songs ♥' : 'Removed from Liked Songs');
 
     try {
       const token = localStorage.getItem('accessToken');
@@ -401,8 +414,9 @@ export default function App() {
         );
         return next;
       });
+      toast.info(`"${track.title}" deleted`);
     } catch (err: any) {
-      alert(err.message || 'Error deleting track');
+      toast.error(err.message || 'Error deleting track');
     }
   };
 
@@ -443,9 +457,11 @@ export default function App() {
         setPlaylists((prev) => prev.filter((p) => p.id !== selectedPlaylist.id));
         setSelectedPlaylist(null);
         setCurrentTab('home');
+        toast.info('Playlist deleted');
       }
     } catch (err) {
       console.error('Failed to delete playlist:', err);
+      toast.error('Failed to delete playlist');
     }
   };
 
@@ -474,11 +490,72 @@ export default function App() {
           return next;
         });
         fetchPlaylists();
+        toast.info('Track removed from playlist');
       }
     } catch (err) {
       console.error('Failed to remove track from playlist:', err);
+      toast.error('Failed to remove track from playlist');
     }
   };
+
+  // Global Keyboard Shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      // Space: Play / Pause
+      if (e.code === 'Space') {
+        e.preventDefault();
+        const state = usePlayerStore.getState();
+        if (state.currentTrack) {
+          state.togglePlay();
+        }
+      }
+
+      // ArrowRight: +5s Seek
+      if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        const state = usePlayerStore.getState();
+        if (state.currentTrack && state.duration > 0) {
+          state.seek(Math.min(state.duration, state.currentTime + 5));
+        }
+      }
+
+      // ArrowLeft: -5s Seek
+      if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        const state = usePlayerStore.getState();
+        if (state.currentTrack && state.duration > 0) {
+          state.seek(Math.max(0, state.currentTime - 5));
+        }
+      }
+
+      // KeyM: Mute / Unmute
+      if (e.code === 'KeyM') {
+        e.preventDefault();
+        usePlayerStore.getState().toggleMute();
+      }
+
+      // KeyL: Like / Unlike current playing track
+      if (e.code === 'KeyL') {
+        e.preventDefault();
+        const currentTrack = usePlayerStore.getState().currentTrack;
+        if (currentTrack) {
+          handleToggleLike(currentTrack);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleToggleLike]);
 
   return (
     <div className="flex h-screen bg-denzo-dark text-denzo-light overflow-hidden font-sans select-none">
@@ -503,25 +580,38 @@ export default function App() {
         }}
         onSelectPlaylist={handleSelectPlaylist}
         selectedPlaylistId={selectedPlaylist?.id}
+        isMobileOpen={isMobileMenuOpen}
+        onMobileClose={() => setIsMobileMenuOpen(false)}
       />
 
       {/* 2. Main Content Viewport */}
       <main className="flex-1 flex flex-col h-full overflow-y-auto pb-28 relative">
         {/* Top Header Bar */}
-        <header className="sticky top-0 z-40 h-20 px-8 flex items-center justify-between bg-denzo-dark/80 backdrop-blur-xl border-b border-denzo-border/40">
-          {/* Search Input */}
-          <div className="relative w-96">
-            <Search
-              size={18}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2 text-denzo-muted pointer-events-none"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search tracks, artists, genres..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-denzo-surface border border-denzo-border/70 text-sm text-white placeholder:text-denzo-muted focus:outline-none focus:border-denzo-rose focus:shadow-denzo-glow-sm transition-all"
-            />
+        <header className="sticky top-0 z-40 h-20 px-4 md:px-8 flex items-center justify-between bg-denzo-dark/80 backdrop-blur-xl border-b border-denzo-border/40 gap-3">
+          <div className="flex items-center gap-3 flex-1 max-w-lg">
+            {/* Mobile Hamburger Menu Toggle */}
+            <button
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="p-2 -ml-1 rounded-xl text-zinc-300 hover:text-white hover:bg-zinc-800/60 md:hidden transition-colors flex-shrink-0"
+              title="Open Navigation Menu"
+            >
+              <Menu size={22} />
+            </button>
+
+            {/* Search Input */}
+            <div className="relative w-full">
+              <Search
+                size={18}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-denzo-muted pointer-events-none"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search tracks, artists, genres..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-denzo-surface border border-denzo-border/70 text-xs md:text-sm text-white placeholder:text-denzo-muted focus:outline-none focus:border-denzo-rose focus:shadow-denzo-glow-sm transition-all"
+              />
+            </div>
           </div>
 
           {/* User Profile / Auth Actions */}
@@ -1315,7 +1405,10 @@ export default function App() {
       <UploadModal
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
-        onUploadSuccess={() => fetchTracks()}
+        onUploadSuccess={() => {
+          fetchTracks();
+          toast.success('Audio track uploaded successfully!');
+        }}
       />
 
       {/* 5. Edit Track Modal */}
@@ -1326,7 +1419,10 @@ export default function App() {
           setEditingTrack(null);
         }}
         track={editingTrack}
-        onSuccess={handleEditSuccess}
+        onSuccess={(updated) => {
+          handleEditSuccess(updated);
+          toast.success('Track updated successfully!');
+        }}
       />
 
       {/* 6. Create Playlist Modal */}
@@ -1336,6 +1432,7 @@ export default function App() {
         onSuccess={(newPlaylist) => {
           setPlaylists((prev) => [newPlaylist, ...prev]);
           handleSelectPlaylist(newPlaylist);
+          toast.success(`Playlist "${newPlaylist.title}" created!`);
         }}
       />
 
@@ -1349,7 +1446,10 @@ export default function App() {
         track={trackForPlaylist}
         playlists={playlists}
         onOpenCreatePlaylist={() => setIsCreatePlaylistOpen(true)}
-        onTrackAdded={() => fetchPlaylists()}
+        onTrackAdded={() => {
+          fetchPlaylists();
+          toast.success('Track added to playlist!');
+        }}
       />
 
       {/* 8. Auth Modal (Login / Register) */}
@@ -1457,6 +1557,9 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* 9. Global Toast Notification System */}
+      <ToastContainer />
     </div>
   );
 }

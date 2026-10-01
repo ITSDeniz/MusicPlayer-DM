@@ -85,12 +85,20 @@ export const BottomPlayer: React.FC = () => {
 
   return (
     <>
-      <div className="fixed bottom-0 left-0 right-0 h-24 bg-denzo-surface/95 backdrop-blur-md border-t border-denzo-border/60 px-6 flex items-center justify-between z-40 shadow-2xl">
+      <footer className="fixed bottom-0 left-0 right-0 h-20 md:h-24 bg-denzo-surface/95 backdrop-blur-xl border-t border-denzo-border/70 px-4 md:px-8 flex items-center justify-between z-40 shadow-2xl">
+        {/* Mobile Top Thin Progress Line */}
+        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-zinc-800 md:hidden">
+          <div
+            className="h-full bg-denzo-gradient transition-all"
+            style={{ width: `${progressPercent}%` }}
+          />
+        </div>
+
         {/* 1. Track Info (Left) */}
-        <div className="flex items-center gap-4 w-1/4 min-w-[200px]">
+        <div className="flex items-center gap-3 md:gap-4 flex-1 md:flex-initial md:w-1/4 min-w-0 pr-2">
           <div
             onClick={() => setIsExpandedOpen(true)}
-            className="relative w-14 h-14 rounded-xl bg-denzo-card border border-denzo-border/80 overflow-hidden flex-shrink-0 group cursor-pointer shadow-md hover:border-denzo-rose/50 transition-colors"
+            className="relative w-12 h-12 md:w-14 md:h-14 rounded-xl bg-denzo-card border border-denzo-border/80 overflow-hidden flex-shrink-0 group cursor-pointer shadow-md hover:border-denzo-rose/50 transition-colors"
             title="Expand player"
           >
             {currentTrack.coverImageUrl ? (
@@ -101,7 +109,7 @@ export const BottomPlayer: React.FC = () => {
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-denzo-card to-zinc-900 text-denzo-muted">
-                <Music size={22} />
+                <Music size={20} />
               </div>
             )}
             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
@@ -109,21 +117,21 @@ export const BottomPlayer: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex flex-col min-w-0">
-            <span
-              onClick={() => setIsExpandedOpen(true)}
-              className="text-sm font-semibold text-denzo-light truncate hover:text-denzo-rose cursor-pointer transition-colors"
-            >
+          <div
+            className="flex flex-col min-w-0 flex-1 cursor-pointer"
+            onClick={() => setIsExpandedOpen(true)}
+          >
+            <span className="text-xs md:text-sm font-semibold text-denzo-light truncate hover:text-denzo-rose transition-colors">
               {currentTrack.title}
             </span>
-            <span className="text-xs text-denzo-muted truncate hover:text-zinc-300 cursor-pointer">
+            <span className="text-[11px] md:text-xs text-denzo-muted truncate hover:text-zinc-300">
               {currentTrack.artist?.name || 'Unknown Artist'}
             </span>
           </div>
 
           <button
             onClick={handleToggleLike}
-            className={`ml-2 p-1.5 rounded-full transition-colors ${
+            className={`p-1.5 rounded-full transition-colors flex-shrink-0 ${
               currentTrack.isLiked
                 ? 'text-denzo-rose hover:text-denzo-pink'
                 : 'text-denzo-muted hover:text-white'
@@ -134,8 +142,39 @@ export const BottomPlayer: React.FC = () => {
           </button>
         </div>
 
-        {/* 2. Controls & Scrubber (Center) */}
-        <div className="flex flex-col items-center gap-1.5 max-w-xl w-2/4">
+        {/* Mobile Quick Action Buttons (shown only on < md) */}
+        <div className="flex items-center gap-1.5 md:hidden flex-shrink-0">
+          <button
+            onClick={togglePlay}
+            className="w-10 h-10 rounded-full bg-denzo-gradient hover:bg-denzo-gradient-hover text-white flex items-center justify-center shadow-denzo-glow transition-transform active:scale-95"
+            title={isPlaying ? 'Pause' : 'Play'}
+          >
+            {isPlaying ? (
+              <Pause size={18} fill="currentColor" />
+            ) : (
+              <Play size={18} fill="currentColor" className="ml-0.5" />
+            )}
+          </button>
+
+          <button
+            onClick={nextTrack}
+            className="p-2 text-denzo-muted hover:text-white transition-colors"
+            title="Next"
+          >
+            <SkipForward size={19} />
+          </button>
+
+          <button
+            onClick={() => setIsExpandedOpen(true)}
+            className="p-2 text-denzo-muted hover:text-white transition-colors"
+            title="Expand Full Player"
+          >
+            <Maximize2 size={18} />
+          </button>
+        </div>
+
+        {/* 2. Controls & Scrubber (Desktop Center) */}
+        <div className="hidden md:flex flex-col items-center gap-1.5 max-w-xl w-2/4">
           {/* Playback Buttons */}
           <div className="flex items-center gap-5">
             <button
@@ -228,8 +267,8 @@ export const BottomPlayer: React.FC = () => {
           </div>
         </div>
 
-        {/* 3. Volume & Extras (Right) */}
-        <div className="flex items-center justify-end gap-3 w-1/4 min-w-[150px]">
+        {/* 3. Volume & Extras (Desktop Right) */}
+        <div className="hidden md:flex items-center justify-end gap-3 w-1/4 min-w-[150px]">
           {/* Toggle Waveform Display */}
           <button
             onClick={() => setShowWaveform(!showWaveform)}
@@ -290,7 +329,7 @@ export const BottomPlayer: React.FC = () => {
             />
           </div>
         </div>
-      </div>
+      </footer>
 
       {/* Slide-in Queue Drawer */}
       <QueueDrawer isOpen={isQueueOpen} onClose={() => setIsQueueOpen(false)} />
