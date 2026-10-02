@@ -13,7 +13,6 @@ import {
   Music,
   ListMusic,
   Maximize2,
-  Activity,
   RotateCcw,
   RotateCw,
 } from 'lucide-react';
@@ -32,7 +31,6 @@ function formatTime(seconds: number): string {
 export const BottomPlayer: React.FC = () => {
   const {
     currentTrack,
-    queue,
     isPlaying,
     currentTime,
     duration,
@@ -52,35 +50,77 @@ export const BottomPlayer: React.FC = () => {
     setLikeStatus,
   } = usePlayerStore();
 
-  const [showWaveform, setShowWaveform] = useState(true);
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isExpandedOpen, setIsExpandedOpen] = useState(false);
-  const progressRef = useRef<HTMLDivElement>(null);
   const mobileBarRef = useRef<HTMLDivElement>(null);
   const [isHoveringMobileBar, setIsHoveringMobileBar] = useState(false);
   const [hoverMobileTime, setHoverMobileTime] = useState<number | null>(null);
   const [hoverMobileX, setHoverMobileX] = useState<number>(0);
 
+  // Smooth mobile touch scrubbing state
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const [scrubPercent, setScrubPercent] = useState<number | null>(null);
+  const scrubPercentRef = useRef<number | null>(null);
+  const justScrubbedRef = useRef(false);
+
   if (!currentTrack) {
     return null; // Hidden until the first track starts playing
   }
 
-  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const effectiveProgressPercent =
+    isScrubbing && scrubPercent !== null
+      ? scrubPercent * 100
+      : duration > 0
+      ? (currentTime / duration) * 100
+      : 0;
+
+  const effectiveCurrentTime =
+    isScrubbing && scrubPercent !== null
+      ? scrubPercent * duration
+      : currentTime;
+
   const bufferPercent = duration > 0 ? (bufferedTime / duration) * 100 : 0;
 
-  const handleSeekClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressRef.current || duration <= 0) return;
-    const rect = progressRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickPercent = Math.max(0, Math.min(1, clickX / rect.width));
-    seek(clickPercent * duration);
+  const getPercentFromClientX = (clientX: number) => {
+    if (!mobileBarRef.current) return 0;
+    const rect = mobileBarRef.current.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
   };
 
   const handleMobileBarSeek = (clientX: number) => {
-    if (!mobileBarRef.current || duration <= 0) return;
-    const rect = mobileBarRef.current.getBoundingClientRect();
-    const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    if (duration <= 0) return;
+    const percent = getPercentFromClientX(clientX);
     seek(percent * duration);
+  };
+
+  const handleMobileTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0 || duration <= 0) return;
+    const percent = getPercentFromClientX(e.touches[0].clientX);
+    scrubPercentRef.current = percent;
+    setIsScrubbing(true);
+    setScrubPercent(percent);
+  };
+
+  const handleMobileTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0 || duration <= 0) return;
+    const percent = getPercentFromClientX(e.touches[0].clientX);
+    scrubPercentRef.current = percent;
+    setScrubPercent(percent);
+  };
+
+  const handleMobileTouchEnd = () => {
+    const finalPercent = scrubPercentRef.current;
+    scrubPercentRef.current = null;
+    setIsScrubbing(false);
+    setScrubPercent(null);
+    justScrubbedRef.current = true;
+    setTimeout(() => {
+      justScrubbedRef.current = false;
+    }, 200);
+
+    if (finalPercent !== null && duration > 0) {
+      seek(finalPercent * duration);
+    }
   };
 
   const handleSkipSeconds = (delta: number) => {
@@ -106,13 +146,14 @@ export const BottomPlayer: React.FC = () => {
         {/* Interactive Mobile Top Progress & Scrubber Line */}
         <div
           ref={mobileBarRef}
-          onClick={(e) => handleMobileBarSeek(e.clientX)}
-          onTouchStart={(e) => {
-            if (e.touches.length > 0) handleMobileBarSeek(e.touches[0].clientX);
+          onClick={(e) => {
+            if (justScrubbedRef.current) return;
+            handleMobileBarSeek(e.clientX);
           }}
-          onTouchMove={(e) => {
-            if (e.touches.length > 0) handleMobileBarSeek(e.touches[0].clientX);
-          }}
+          onTouchStart={handleMobileTouchStart}
+          onTouchMove={handleMobileTouchMove}
+          onTouchEnd={handleMobileTouchEnd}
+          onTouchCancel={handleMobileTouchEnd}
           onMouseMove={(e) => {
             if (!mobileBarRef.current || duration <= 0) return;
             const rect = mobileBarRef.current.getBoundingClientRect();
@@ -126,7 +167,7 @@ export const BottomPlayer: React.FC = () => {
             setIsHoveringMobileBar(false);
             setHoverMobileTime(null);
           }}
-          className="absolute -top-3 left-0 right-0 h-6 md:hidden flex items-center cursor-pointer group z-50 select-none"
+          className="absolute -top-3.5 left-0 right-0 h-7 md:hidden flex items-center cursor-pointer group z-50 select-none touch-none"
           title="Tap or drag to seek"
         >
           {/* Floating Timestamp Tooltip */}
@@ -140,17 +181,25 @@ export const BottomPlayer: React.FC = () => {
           )}
 
           {/* Scrubber Track */}
-          <div className="w-full h-1.5 group-hover:h-2.5 bg-zinc-800 relative transition-all">
+          <div className="w-full h-1.5 group-hover:h-2.5 bg-zinc-800 rounded-full relative transition-all overflow-visible">
+            {/* Buffer progress (grey) */}
             <div
-              className="absolute left-0 top-0 bottom-0 bg-zinc-700 transition-all"
+              className="absolute left-0 top-0 h-full bg-zinc-700/60 rounded-full transition-all pointer-events-none"
               style={{ width: `${bufferPercent}%` }}
             />
+            {/* Playback progress (red-to-pink gradient) */}
             <div
-              className="absolute left-0 top-0 bottom-0 bg-denzo-gradient rounded-r-full transition-all relative"
-              style={{ width: `${progressPercent}%` }}
+              className={`absolute left-0 top-0 h-full bg-rose-500 bg-denzo-gradient rounded-full pointer-events-none z-10 ${
+                isScrubbing ? 'transition-none' : 'transition-[width] duration-150 ease-linear'
+              }`}
+              style={{ width: `${effectiveProgressPercent}%` }}
             >
               {/* Scrub thumb dot */}
-              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-denzo-glow translate-x-1/2 scale-100 group-hover:scale-125 transition-transform" />
+              <div
+                className={`absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-denzo-glow translate-x-1/2 ${
+                  isScrubbing ? 'scale-125' : 'scale-100 group-hover:scale-125'
+                } transition-transform`}
+              />
             </div>
           </div>
         </div>
@@ -189,14 +238,14 @@ export const BottomPlayer: React.FC = () => {
               <span className="truncate">{currentTrack.artist?.name || 'Unknown Artist'}</span>
               <span className="text-zinc-600 md:hidden">•</span>
               <span className="font-mono text-zinc-400 md:hidden flex-shrink-0">
-                {formatTime(currentTime)} / {formatTime(duration)}
+                {formatTime(effectiveCurrentTime)} / {formatTime(duration)}
               </span>
             </div>
           </div>
 
           <button
             onClick={handleToggleLike}
-            className={`p-1.5 rounded-full transition-colors flex-shrink-0 ${
+            className={`p-1.5 rounded-full transition-colors flex-shrink-0 touch-manipulation select-none ${
               currentTrack.isLiked
                 ? 'text-denzo-rose hover:text-denzo-pink'
                 : 'text-denzo-muted hover:text-white'
@@ -211,8 +260,9 @@ export const BottomPlayer: React.FC = () => {
         <div className="flex items-center gap-0.5 sm:gap-1 md:hidden flex-shrink-0">
           {/* Rewind 10s */}
           <button
+            type="button"
             onClick={() => handleSkipSeconds(-10)}
-            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform"
+            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform touch-manipulation select-none"
             title="Rewind 10 seconds"
           >
             <RotateCcw size={16} />
@@ -220,8 +270,9 @@ export const BottomPlayer: React.FC = () => {
 
           {/* Prev Track */}
           <button
+            type="button"
             onClick={prevTrack}
-            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform hidden xs:block"
+            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform hidden xs:block touch-manipulation select-none"
             title="Previous Track"
           >
             <SkipBack size={17} />
@@ -229,8 +280,9 @@ export const BottomPlayer: React.FC = () => {
 
           {/* Master Play/Pause */}
           <button
+            type="button"
             onClick={togglePlay}
-            className="w-9 h-9 rounded-full bg-denzo-gradient hover:bg-denzo-gradient-hover text-white flex items-center justify-center shadow-denzo-glow transition-transform active:scale-95 mx-0.5"
+            className="w-9 h-9 rounded-full bg-denzo-gradient hover:bg-denzo-gradient-hover text-white flex items-center justify-center shadow-denzo-glow transition-transform active:scale-95 mx-0.5 touch-manipulation select-none"
             title={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? (
@@ -242,8 +294,9 @@ export const BottomPlayer: React.FC = () => {
 
           {/* Forward 10s */}
           <button
+            type="button"
             onClick={() => handleSkipSeconds(10)}
-            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform"
+            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform touch-manipulation select-none"
             title="Forward 10 seconds"
           >
             <RotateCw size={16} />
@@ -251,8 +304,9 @@ export const BottomPlayer: React.FC = () => {
 
           {/* Next Track */}
           <button
+            type="button"
             onClick={nextTrack}
-            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform"
+            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform touch-manipulation select-none"
             title="Next Track"
           >
             <SkipForward size={17} />
@@ -260,8 +314,9 @@ export const BottomPlayer: React.FC = () => {
 
           {/* Expand Full Player */}
           <button
+            type="button"
             onClick={() => setIsExpandedOpen(true)}
-            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform ml-0.5"
+            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform ml-0.5 touch-manipulation select-none"
             title="Expand Full Player"
           >
             <Maximize2 size={16} />
@@ -328,32 +383,15 @@ export const BottomPlayer: React.FC = () => {
             </span>
 
             <div className="flex-1">
-              {showWaveform ? (
-                <WaveformScrubber
-                  waveformData={currentTrack.waveformData}
-                  currentTime={currentTime}
-                  duration={duration}
-                  bufferedTime={bufferedTime}
-                  onSeek={seek}
-                  height={24}
-                  barCount={70}
-                />
-              ) : (
-                <div
-                  ref={progressRef}
-                  onClick={handleSeekClick}
-                  className="relative h-1.5 bg-denzo-card hover:h-2 rounded-full cursor-pointer transition-all group overflow-hidden"
-                >
-                  <div
-                    className="absolute left-0 top-0 bottom-0 bg-zinc-800 rounded-full transition-all"
-                    style={{ width: `${bufferPercent}%` }}
-                  />
-                  <div
-                    className="absolute left-0 top-0 bottom-0 bg-denzo-gradient rounded-full transition-all"
-                    style={{ width: `${progressPercent}%` }}
-                  />
-                </div>
-              )}
+              <WaveformScrubber
+                waveformData={currentTrack.waveformData}
+                currentTime={currentTime}
+                duration={duration}
+                bufferedTime={bufferedTime}
+                onSeek={seek}
+                height={24}
+                barCount={70}
+              />
             </div>
 
             <span className="text-[11px] font-mono text-denzo-muted w-9 select-none">
@@ -364,23 +402,11 @@ export const BottomPlayer: React.FC = () => {
 
         {/* 3. Volume & Extras (Desktop Right) */}
         <div className="hidden md:flex items-center justify-end gap-3 w-1/4 min-w-[150px]">
-          {/* Toggle Waveform Display */}
-          <button
-            onClick={() => setShowWaveform(!showWaveform)}
-            className={`p-1.5 rounded-lg transition-colors ${
-              showWaveform
-                ? 'text-denzo-rose bg-denzo-rose/10'
-                : 'text-denzo-muted hover:text-white'
-            }`}
-            title={showWaveform ? 'Switch to Classic Bar' : 'Switch to Waveform View'}
-          >
-            <Activity size={17} />
-          </button>
 
           {/* Queue Drawer Button */}
           <button
             onClick={() => setIsQueueOpen(true)}
-            className={`relative p-1.5 rounded-lg transition-colors ${
+            className={`p-1.5 rounded-lg transition-colors ${
               isQueueOpen
                 ? 'text-denzo-rose bg-denzo-rose/10'
                 : 'text-denzo-muted hover:text-white'
@@ -388,11 +414,6 @@ export const BottomPlayer: React.FC = () => {
             title="Open Queue"
           >
             <ListMusic size={18} />
-            {queue.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-denzo-gradient text-[9px] font-bold text-white flex items-center justify-center shadow-denzo-glow-sm">
-                {queue.length}
-              </span>
-            )}
           </button>
 
           {/* Expand Full Player Button */}

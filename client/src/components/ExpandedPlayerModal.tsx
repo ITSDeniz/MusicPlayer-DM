@@ -183,8 +183,9 @@ export const ExpandedPlayerModal: React.FC<ExpandedPlayerModalProps> = ({
         {/* Playback Controls */}
         <div className="w-full flex items-center justify-between mb-4">
           <button
+            type="button"
             onClick={toggleShuffle}
-            className={`p-2.5 rounded-xl transition-all ${
+            className={`p-2.5 rounded-xl transition-all touch-manipulation select-none ${
               isShuffled ? 'text-denzo-pink bg-denzo-pink/10' : 'text-zinc-400 hover:text-white'
             }`}
             title="Shuffle"
@@ -193,16 +194,18 @@ export const ExpandedPlayerModal: React.FC<ExpandedPlayerModalProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={() => handleSkipSeconds(-10)}
-            className="p-2.5 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all"
+            className="p-2.5 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all touch-manipulation select-none"
             title="Rewind 10 seconds"
           >
             <RotateCcw size={20} />
           </button>
 
           <button
+            type="button"
             onClick={prevTrack}
-            className="p-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-white/10 transition-all"
+            className="p-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-white/10 transition-all touch-manipulation select-none"
             title="Previous Track"
           >
             <SkipBack size={24} />
@@ -210,8 +213,9 @@ export const ExpandedPlayerModal: React.FC<ExpandedPlayerModalProps> = ({
 
           {/* Master Play/Pause Button */}
           <button
+            type="button"
             onClick={togglePlay}
-            className="w-16 h-16 rounded-full bg-denzo-gradient hover:bg-denzo-gradient-hover text-white flex items-center justify-center shadow-denzo-glow transition-all hover:scale-110 active:scale-95"
+            className="w-16 h-16 rounded-full bg-denzo-gradient hover:bg-denzo-gradient-hover text-white flex items-center justify-center shadow-denzo-glow transition-all hover:scale-110 active:scale-95 touch-manipulation select-none"
             title={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? (
@@ -222,24 +226,27 @@ export const ExpandedPlayerModal: React.FC<ExpandedPlayerModalProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={nextTrack}
-            className="p-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-white/10 transition-all"
+            className="p-2.5 rounded-xl text-zinc-300 hover:text-white hover:bg-white/10 transition-all touch-manipulation select-none"
             title="Next Track"
           >
             <SkipForward size={24} />
           </button>
 
           <button
+            type="button"
             onClick={() => handleSkipSeconds(10)}
-            className="p-2.5 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all"
+            className="p-2.5 rounded-xl text-zinc-400 hover:text-white hover:bg-white/10 transition-all touch-manipulation select-none"
             title="Forward 10 seconds"
           >
             <RotateCw size={20} />
           </button>
 
           <button
+            type="button"
             onClick={toggleRepeat}
-            className={`p-2.5 rounded-xl transition-all ${
+            className={`p-2.5 rounded-xl transition-all touch-manipulation select-none ${
               repeatMode !== 'off' ? 'text-denzo-rose bg-denzo-rose/10' : 'text-zinc-400 hover:text-white'
             }`}
             title={`Repeat: ${repeatMode}`}

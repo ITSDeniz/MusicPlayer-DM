@@ -30,6 +30,8 @@ export const WaveformScrubber: React.FC<WaveformScrubberProps> = ({
   const [hoverPosition, setHoverPosition] = useState<number | null>(null);
   const [hoverTime, setHoverTime] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [dragRatio, setDragRatio] = useState<number | null>(null);
+  const dragRatioRef = useRef<number | null>(null);
 
   // Normalize or generate deterministic waveform peaks
   const normalizedPeaks = useMemo(() => {
@@ -65,41 +67,94 @@ export const WaveformScrubber: React.FC<WaveformScrubberProps> = ({
     return fallback;
   }, [waveformData, barCount]);
 
-  const progressPercent = duration > 0 ? Math.min(1, Math.max(0, currentTime / duration)) : 0;
+  const effectiveProgressRatio =
+    dragRatio !== null
+      ? dragRatio
+      : duration > 0
+      ? Math.min(1, Math.max(0, currentTime / duration))
+      : 0;
   const bufferPercent = duration > 0 ? Math.min(1, Math.max(0, bufferedTime / duration)) : 0;
 
-  const handlePointerSeek = (clientX: number) => {
-    if (!containerRef.current || duration <= 0) return;
+  const getRatioFromClientX = (clientX: number) => {
+    if (!containerRef.current) return 0;
     const rect = containerRef.current.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-    onSeek(ratio * duration);
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  };
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0 || duration <= 0) return;
+    const ratio = getRatioFromClientX(e.touches[0].clientX);
+    dragRatioRef.current = ratio;
+    setIsDragging(true);
+    setDragRatio(ratio);
+    setHoverPosition(ratio);
+    setHoverTime(ratio * duration);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length === 0 || duration <= 0) return;
+    const ratio = getRatioFromClientX(e.touches[0].clientX);
+    dragRatioRef.current = ratio;
+    setDragRatio(ratio);
+    setHoverPosition(ratio);
+    setHoverTime(ratio * duration);
+  };
+
+  const handleTouchEnd = () => {
+    const finalRatio = dragRatioRef.current;
+    dragRatioRef.current = null;
+    setIsDragging(false);
+    setDragRatio(null);
+    setHoverPosition(null);
+    setHoverTime(null);
+    if (finalRatio !== null && duration > 0) {
+      onSeek(finalRatio * duration);
+    }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!containerRef.current || duration <= 0) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const ratio = getRatioFromClientX(e.clientX);
     setHoverPosition(ratio);
     setHoverTime(ratio * duration);
 
     if (isDragging) {
-      handlePointerSeek(e.clientX);
+      dragRatioRef.current = ratio;
+      setDragRatio(ratio);
     }
   };
 
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const ratio = getRatioFromClientX(e.clientX);
+    dragRatioRef.current = ratio;
     setIsDragging(true);
-    handlePointerSeek(e.clientX);
+    setDragRatio(ratio);
   };
 
   const handleMouseUp = () => {
-    setIsDragging(false);
+    if (isDragging) {
+      const finalRatio = dragRatioRef.current;
+      dragRatioRef.current = null;
+      setIsDragging(false);
+      setDragRatio(null);
+      if (finalRatio !== null && duration > 0) {
+        onSeek(finalRatio * duration);
+      }
+    }
   };
 
   const handleMouseLeave = () => {
     setHoverPosition(null);
     setHoverTime(null);
-    setIsDragging(false);
+    if (isDragging) {
+      const finalRatio = dragRatioRef.current;
+      dragRatioRef.current = null;
+      setIsDragging(false);
+      setDragRatio(null);
+      if (finalRatio !== null && duration > 0) {
+        onSeek(finalRatio * duration);
+      }
+    }
   };
 
   return (
@@ -109,7 +164,11 @@ export const WaveformScrubber: React.FC<WaveformScrubberProps> = ({
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
-      className="relative w-full flex items-center cursor-pointer select-none group py-1"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+      className="relative w-full flex items-center cursor-pointer select-none touch-none group py-1"
       style={{ height: `${height}px` }}
       title="Click or drag to seek"
     >
@@ -117,7 +176,7 @@ export const WaveformScrubber: React.FC<WaveformScrubberProps> = ({
       <div className="w-full h-full flex items-center justify-between gap-[2px]">
         {normalizedPeaks.map((peak, index) => {
           const barRatio = index / normalizedPeaks.length;
-          const isPlayed = barRatio <= progressPercent;
+          const isPlayed = barRatio <= effectiveProgressRatio;
           const isBuffered = barRatio <= bufferPercent;
           const isHovered = hoverPosition !== null && barRatio <= hoverPosition;
 
