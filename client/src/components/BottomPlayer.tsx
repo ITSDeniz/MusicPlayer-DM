@@ -14,6 +14,8 @@ import {
   ListMusic,
   Maximize2,
   Activity,
+  RotateCcw,
+  RotateCw,
 } from 'lucide-react';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { WaveformScrubber } from './WaveformScrubber';
@@ -54,6 +56,10 @@ export const BottomPlayer: React.FC = () => {
   const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isExpandedOpen, setIsExpandedOpen] = useState(false);
   const progressRef = useRef<HTMLDivElement>(null);
+  const mobileBarRef = useRef<HTMLDivElement>(null);
+  const [isHoveringMobileBar, setIsHoveringMobileBar] = useState(false);
+  const [hoverMobileTime, setHoverMobileTime] = useState<number | null>(null);
+  const [hoverMobileX, setHoverMobileX] = useState<number>(0);
 
   if (!currentTrack) {
     return null; // Hidden until the first track starts playing
@@ -68,6 +74,17 @@ export const BottomPlayer: React.FC = () => {
     const clickX = e.clientX - rect.left;
     const clickPercent = Math.max(0, Math.min(1, clickX / rect.width));
     seek(clickPercent * duration);
+  };
+
+  const handleMobileBarSeek = (clientX: number) => {
+    if (!mobileBarRef.current || duration <= 0) return;
+    const rect = mobileBarRef.current.getBoundingClientRect();
+    const percent = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    seek(percent * duration);
+  };
+
+  const handleSkipSeconds = (delta: number) => {
+    seek(Math.max(0, Math.min(duration, currentTime + delta)));
   };
 
   const handleToggleLike = async () => {
@@ -85,17 +102,61 @@ export const BottomPlayer: React.FC = () => {
 
   return (
     <>
-      <footer className="fixed bottom-0 left-0 right-0 h-20 md:h-24 bg-denzo-surface/95 backdrop-blur-xl border-t border-denzo-border/70 px-4 md:px-8 flex items-center justify-between z-40 shadow-2xl">
-        {/* Mobile Top Thin Progress Line */}
-        <div className="absolute top-0 left-0 right-0 h-[2.5px] bg-zinc-800 md:hidden">
-          <div
-            className="h-full bg-denzo-gradient transition-all"
-            style={{ width: `${progressPercent}%` }}
-          />
+      <footer className="fixed bottom-0 left-0 right-0 h-20 md:h-24 bg-denzo-surface/95 backdrop-blur-xl border-t border-denzo-border/70 px-3 md:px-8 flex items-center justify-between z-40 shadow-2xl">
+        {/* Interactive Mobile Top Progress & Scrubber Line */}
+        <div
+          ref={mobileBarRef}
+          onClick={(e) => handleMobileBarSeek(e.clientX)}
+          onTouchStart={(e) => {
+            if (e.touches.length > 0) handleMobileBarSeek(e.touches[0].clientX);
+          }}
+          onTouchMove={(e) => {
+            if (e.touches.length > 0) handleMobileBarSeek(e.touches[0].clientX);
+          }}
+          onMouseMove={(e) => {
+            if (!mobileBarRef.current || duration <= 0) return;
+            const rect = mobileBarRef.current.getBoundingClientRect();
+            const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+            setHoverMobileTime(percent * duration);
+            setHoverMobileX(e.clientX - rect.left);
+            setIsHoveringMobileBar(true);
+          }}
+          onMouseEnter={() => setIsHoveringMobileBar(true)}
+          onMouseLeave={() => {
+            setIsHoveringMobileBar(false);
+            setHoverMobileTime(null);
+          }}
+          className="absolute -top-3 left-0 right-0 h-6 md:hidden flex items-center cursor-pointer group z-50 select-none"
+          title="Tap or drag to seek"
+        >
+          {/* Floating Timestamp Tooltip */}
+          {isHoveringMobileBar && hoverMobileTime !== null && (
+            <div
+              className="absolute -top-6 px-2 py-0.5 rounded-md bg-zinc-950 border border-denzo-rose/50 text-[10px] font-mono text-white shadow-xl pointer-events-none transform -translate-x-1/2"
+              style={{ left: `${hoverMobileX}px` }}
+            >
+              {formatTime(hoverMobileTime)}
+            </div>
+          )}
+
+          {/* Scrubber Track */}
+          <div className="w-full h-1.5 group-hover:h-2.5 bg-zinc-800 relative transition-all">
+            <div
+              className="absolute left-0 top-0 bottom-0 bg-zinc-700 transition-all"
+              style={{ width: `${bufferPercent}%` }}
+            />
+            <div
+              className="absolute left-0 top-0 bottom-0 bg-denzo-gradient rounded-r-full transition-all relative"
+              style={{ width: `${progressPercent}%` }}
+            >
+              {/* Scrub thumb dot */}
+              <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full bg-white shadow-denzo-glow translate-x-1/2 scale-100 group-hover:scale-125 transition-transform" />
+            </div>
+          </div>
         </div>
 
         {/* 1. Track Info (Left) */}
-        <div className="flex items-center gap-3 md:gap-4 flex-1 md:flex-initial md:w-1/4 min-w-0 pr-2">
+        <div className="flex items-center gap-2.5 md:gap-4 flex-1 md:flex-initial md:w-1/4 min-w-0 pr-1">
           <div
             onClick={() => setIsExpandedOpen(true)}
             className="relative w-12 h-12 md:w-14 md:h-14 rounded-xl bg-denzo-card border border-denzo-border/80 overflow-hidden flex-shrink-0 group cursor-pointer shadow-md hover:border-denzo-rose/50 transition-colors"
@@ -124,9 +185,13 @@ export const BottomPlayer: React.FC = () => {
             <span className="text-xs md:text-sm font-semibold text-denzo-light truncate hover:text-denzo-rose transition-colors">
               {currentTrack.title}
             </span>
-            <span className="text-[11px] md:text-xs text-denzo-muted truncate hover:text-zinc-300">
-              {currentTrack.artist?.name || 'Unknown Artist'}
-            </span>
+            <div className="flex items-center gap-1.5 text-[10px] md:text-xs text-denzo-muted truncate">
+              <span className="truncate">{currentTrack.artist?.name || 'Unknown Artist'}</span>
+              <span className="text-zinc-600 md:hidden">•</span>
+              <span className="font-mono text-zinc-400 md:hidden flex-shrink-0">
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </span>
+            </div>
           </div>
 
           <button
@@ -138,38 +203,68 @@ export const BottomPlayer: React.FC = () => {
             }`}
             title={currentTrack.isLiked ? 'Unlike' : 'Like'}
           >
-            <Heart size={18} fill={currentTrack.isLiked ? 'currentColor' : 'none'} />
+            <Heart size={16} fill={currentTrack.isLiked ? 'currentColor' : 'none'} />
           </button>
         </div>
 
         {/* Mobile Quick Action Buttons (shown only on < md) */}
-        <div className="flex items-center gap-1.5 md:hidden flex-shrink-0">
+        <div className="flex items-center gap-0.5 sm:gap-1 md:hidden flex-shrink-0">
+          {/* Rewind 10s */}
+          <button
+            onClick={() => handleSkipSeconds(-10)}
+            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform"
+            title="Rewind 10 seconds"
+          >
+            <RotateCcw size={16} />
+          </button>
+
+          {/* Prev Track */}
+          <button
+            onClick={prevTrack}
+            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform hidden xs:block"
+            title="Previous Track"
+          >
+            <SkipBack size={17} />
+          </button>
+
+          {/* Master Play/Pause */}
           <button
             onClick={togglePlay}
-            className="w-10 h-10 rounded-full bg-denzo-gradient hover:bg-denzo-gradient-hover text-white flex items-center justify-center shadow-denzo-glow transition-transform active:scale-95"
+            className="w-9 h-9 rounded-full bg-denzo-gradient hover:bg-denzo-gradient-hover text-white flex items-center justify-center shadow-denzo-glow transition-transform active:scale-95 mx-0.5"
             title={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? (
-              <Pause size={18} fill="currentColor" />
+              <Pause size={17} fill="currentColor" />
             ) : (
-              <Play size={18} fill="currentColor" className="ml-0.5" />
+              <Play size={17} fill="currentColor" className="ml-0.5" />
             )}
           </button>
 
+          {/* Forward 10s */}
           <button
-            onClick={nextTrack}
-            className="p-2 text-denzo-muted hover:text-white transition-colors"
-            title="Next"
+            onClick={() => handleSkipSeconds(10)}
+            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform"
+            title="Forward 10 seconds"
           >
-            <SkipForward size={19} />
+            <RotateCw size={16} />
           </button>
 
+          {/* Next Track */}
+          <button
+            onClick={nextTrack}
+            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform"
+            title="Next Track"
+          >
+            <SkipForward size={17} />
+          </button>
+
+          {/* Expand Full Player */}
           <button
             onClick={() => setIsExpandedOpen(true)}
-            className="p-2 text-denzo-muted hover:text-white transition-colors"
+            className="p-1.5 text-denzo-muted hover:text-white active:scale-90 transition-transform ml-0.5"
             title="Expand Full Player"
           >
-            <Maximize2 size={18} />
+            <Maximize2 size={16} />
           </button>
         </div>
 

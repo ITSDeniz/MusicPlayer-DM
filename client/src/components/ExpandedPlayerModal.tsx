@@ -108,9 +108,9 @@ export const ExpandedPlayerModal: React.FC<ExpandedPlayerModalProps> = ({
       </header>
 
       {/* Center Display: Cover Artwork & Info */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-8 max-w-2xl mx-auto w-full">
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-start sm:justify-center px-4 sm:px-8 py-3 max-w-2xl mx-auto w-full overflow-y-auto no-scrollbar">
         {/* Cover Art with Shadow Glow */}
-        <div className="relative w-64 h-64 sm:w-80 sm:h-80 md:w-96 md:h-96 rounded-3xl bg-zinc-900 border border-white/10 overflow-hidden shadow-2xl mb-8 group">
+        <div className="relative w-40 h-40 sm:w-64 sm:h-64 md:w-80 md:h-80 rounded-2xl sm:rounded-3xl bg-zinc-900 border border-white/10 overflow-hidden shadow-2xl mb-4 sm:mb-8 group flex-shrink-0">
           {currentTrack.coverImageUrl ? (
             <img
               src={currentTrack.coverImageUrl}
@@ -121,13 +121,13 @@ export const ExpandedPlayerModal: React.FC<ExpandedPlayerModalProps> = ({
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-zinc-900 text-zinc-600">
-              <Music size={80} />
+              <Music size={60} />
             </div>
           )}
 
           {/* Playing Status Pill */}
           {isPlaying && (
-            <div className="absolute bottom-4 right-4 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center gap-1 text-[11px] text-denzo-pink">
+            <div className="absolute bottom-3 right-3 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center gap-1 text-[11px] text-denzo-pink">
               <span className="w-1.5 h-1.5 rounded-full bg-denzo-rose animate-ping" />
               <span>Playing</span>
             </div>
@@ -135,12 +135,12 @@ export const ExpandedPlayerModal: React.FC<ExpandedPlayerModalProps> = ({
         </div>
 
         {/* Track Title, Artist, & Like Button */}
-        <div className="w-full flex items-center justify-between mb-6">
+        <div className="w-full flex items-center justify-between mb-3 sm:mb-6">
           <div className="min-w-0 pr-4">
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white truncate mb-1">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold tracking-tight text-white truncate mb-1">
               {currentTrack.title}
             </h1>
-            <p className="text-sm sm:text-base text-zinc-400 truncate">
+            <p className="text-xs sm:text-sm md:text-base text-zinc-400 truncate">
               {currentTrack.artist?.name || 'Unknown Artist'}
               {currentTrack.genre && (
                 <span className="ml-2.5 px-2.5 py-0.5 rounded-full bg-white/10 text-xs text-zinc-300 font-medium">
@@ -152,26 +152,26 @@ export const ExpandedPlayerModal: React.FC<ExpandedPlayerModalProps> = ({
 
           <button
             onClick={handleToggleLike}
-            className={`p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 transition-transform hover:scale-110 active:scale-95 ${
+            className={`p-2.5 sm:p-3 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 transition-transform hover:scale-110 active:scale-95 ${
               currentTrack.isLiked ? 'text-denzo-rose' : 'text-zinc-400 hover:text-white'
             }`}
             title={currentTrack.isLiked ? 'Unlike' : 'Like'}
           >
-            <Heart size={22} fill={currentTrack.isLiked ? 'currentColor' : 'none'} />
+            <Heart size={20} fill={currentTrack.isLiked ? 'currentColor' : 'none'} />
           </button>
         </div>
 
         {/* Interactive Large Waveform Scrubber */}
-        <div className="w-full mb-8">
-          <div className="p-3 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 mb-2">
+        <div className="w-full mb-4 sm:mb-8">
+          <div className="p-2.5 sm:p-3 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 mb-2">
             <WaveformScrubber
               waveformData={currentTrack.waveformData}
               currentTime={currentTime}
               duration={duration}
               bufferedTime={bufferedTime}
               onSeek={seek}
-              height={44}
-              barCount={85}
+              height={36}
+              barCount={70}
             />
           </div>
           <div className="flex justify-between items-center px-1 text-xs font-mono text-zinc-400">
